@@ -161,20 +161,41 @@ async function readProgress(page) {
   return page.evaluate(key => JSON.parse(localStorage.getItem(key)), progressKey);
 }
 
-async function pauseAnimationClock(page) {
-  const now = await page.evaluate(() => Date.now());
-  await page.clock.pauseAt(now + 1_000);
+async function controlAnimationFrames(page) {
+  await page.evaluate(() => {
+    const pending = new Map();
+    let requestId = 0;
+    let frameTime = performance.now();
+    window.requestAnimationFrame = callback => {
+      pending.set(++requestId, callback);
+      return requestId;
+    };
+    window.cancelAnimationFrame = id => pending.delete(id);
+    window.munchiesProbe.hasPendingFrame = () => pending.size > 0;
+    window.munchiesProbe.advanceFrames = count => {
+      for (let i = 0; i < count; i++) {
+        // Use the renderer's largest supported frame delta.
+        frameTime += 50;
+        const callbacks = [...pending.values()];
+        pending.clear();
+        for (const callback of callbacks) callback(frameTime);
+      }
+    };
+  });
+  await expect.poll(() => page.evaluate(() => window.munchiesProbe.hasPendingFrame()), {
+    message: 'The Wasm app schedules another animation frame',
+  }).toBe(true);
 }
 
-async function advanceAnimationUntil(page, locator, attribute, value) {
-  // Sample more often than the avatar's 900ms reaction, with a limit for stalled playback.
-  const tickMs = 250;
-  const playbackLimitMs = 10_000;
-  for (let elapsed = 0; elapsed < playbackLimitMs; elapsed += tickMs) {
-    if (await locator.getAttribute(attribute) === value) return;
-    await page.clock.runFor(tickMs);
-  }
-  expect(await locator.getAttribute(attribute), `${attribute} after ${playbackLimitMs} ms of animation time`).toBe(value);
+async function advanceAnimationUntil(locator, attribute, value) {
+  const actual = await locator.evaluate((element, { attribute, value }) => {
+    // Check every frame so a brief reaction cannot pass between observations.
+    for (let frame = 0; frame < 200 && element.getAttribute(attribute) !== value; frame++) {
+      window.munchiesProbe.advanceFrames(1);
+    }
+    return element.getAttribute(attribute);
+  }, { attribute, value });
+  expect(actual, `${attribute} after advancing up to 200 animation frames`).toBe(value);
 }
 
 test('SwiftWasm boots with no external requests and draws an 8 by 9 Retina board between safe HUD zones', async ({ page, request, baseURL }) => {
@@ -245,14 +266,13 @@ test('SwiftWasm boots with no external requests and draws an 8 by 9 Retina board
 });
 
 test('two touch taps select with 1.12× scaling, swap, score and briefly cheer for a Big Mac', async ({ page }) => {
-  await page.clock.install();
   await instrument(page);
   await openGame(page);
   const tiles = findSwap(await frame(page), { preferredKind: 'bigMac' });
   const [a, b] = await canvasPoints(page, tiles);
-  await pauseAnimationClock(page);
+  await controlAnimationFrames(page);
   await page.touchscreen.tap(a.x, a.y);
-  await page.clock.runFor(400);
+  await page.evaluate(() => window.munchiesProbe.advanceFrames(8));
   const selectedScale = await page.evaluate(({ x, y }) =>
     window.munchiesProbe.frame.find(tile => Math.abs(tile.x - x) < 1 && Math.abs(tile.y - y) < 1)?.scale,
   tiles[0]);
@@ -263,8 +283,10 @@ test('two touch taps select with 1.12× scaling, swap, score and briefly cheer f
   await expect(page.locator('#hud-tier-pct')).not.toHaveText('0%');
   await expect(page.locator('#hud-best')).not.toHaveText('BEST 0');
   const cupcake = page.locator('#avatar-cupcake');
-  await advanceAnimationUntil(page, cupcake, 'data-state', 'cheerBigMac');
-  await page.clock.runFor(1_000);
+  await test.step('Observe Cupcake cheer during swap playback', async () => {
+    await advanceAnimationUntil(cupcake, 'data-state', 'cheerBigMac');
+  });
+  await page.evaluate(() => window.munchiesProbe.advanceFrames(20));
   await expect(cupcake).toHaveAttribute('data-state', 'idle');
 });
 
@@ -313,7 +335,6 @@ test('invalid tap and cancelled drag preserve score, meter and board', async ({ 
 });
 
 test('first pointerdown unlocks WebAudio and cascade notes rise one semitone per wave', async ({ page }) => {
-  await page.clock.install();
   await instrument(page, { sound: true });
   await page.goto('/');
   expect(await page.evaluate(() => window.munchiesProbe.contexts)).toBe(0);
@@ -326,7 +347,7 @@ test('first pointerdown unlocks WebAudio and cascade notes rise one semitone per
   await expect(page.locator('#screen-home')).toBeVisible();
   await page.mouse.up();
   await frame(page);
-  await pauseAnimationClock(page);
+  await controlAnimationFrames(page);
   const canvas = page.locator('#board-canvas');
   let tones = [], notes = [];
   for (let turn = 0; turn < 5 && notes.length < 2; turn++) {
@@ -335,7 +356,7 @@ test('first pointerdown unlocks WebAudio and cascade notes rise one semitone per
     await page.touchscreen.tap(a.x, a.y);
     await page.touchscreen.tap(b.x, b.y);
     await expect(canvas).toHaveAttribute('aria-busy', 'true');
-    await advanceAnimationUntil(page, canvas, 'aria-busy', 'false');
+    await advanceAnimationUntil(canvas, 'aria-busy', 'false');
     tones = await page.evaluate(() => window.munchiesProbe.tones);
     notes = tones.filter(tone => tone.gain === 0.22 && Math.abs(tone.stop - tone.start - 0.16) < 0.001);
   }
