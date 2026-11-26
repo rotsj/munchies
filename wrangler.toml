@@ -1,0 +1,7 @@
+name = "munchies"
+compatibility_date = "2026-11-26"
+pages_build_output_dir = "dist"
+
+# Static Cloudflare Pages PWA deployment:
+#   ./build.sh
+#   npx wrangler pages deploy dist --project-name munchies
