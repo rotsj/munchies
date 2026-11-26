@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 216 72">
+  <defs>
+    <g id="living-room" stroke-linecap="round" stroke-linejoin="round">
+      <ellipse cx="54" cy="63" rx="51" ry="5" fill="#161223" opacity=".65"/>
+      <path d="M5 53h40v7H5Z" fill="#50486a" stroke="#2c2844" stroke-width="2"/>
+      <path d="M19 40h11v13H19Z" fill="#5e6c92" stroke="#282e49" stroke-width="2"/>
+      <rect x="4" y="14" width="40" height="28" rx="4" fill="#353958" stroke="#959bce" stroke-width="2.5"/>
+      <rect x="8" y="18" width="32" height="20" rx="2" fill="#1d2340"/>
+      <path d="M33 48q0-2 2-2h9q2 0 2 2v4H33Z" fill="#faf4f7" stroke="#777b9b" stroke-width="1.6"/>
+      <path d="M36 49h6" stroke="#556085" stroke-width="1.3"/>
+
+      <path d="M53 56v7m43-7v7" stroke="#523549" stroke-width="4"/>
+      <path d="M52 44V31q0-6 7-6h32q9 0 9 8v12Z" fill="#9b576f" stroke="#61364e" stroke-width="2.5"/>
+      <path d="M77 28v10" stroke="#ba7384" stroke-width="2"/>
+      <path d="M52 43h49v14H52Z" fill="#b96b7d" stroke="#61364e" stroke-width="2.5"/>
+      <path d="M66 42q0-8 7-9h12q8 0 8 9v10H66Z" fill="#8058b3" stroke="#4b346b" stroke-width="2.3"/>
+      <path d="M67 27q0-13 11-15 13-3 15 14 2 12-11 13-16 0-15-12Z" fill="#bd90ef" stroke="#4b346b" stroke-width="2.4"/>
+      <path d="M71 21q2-5 7-5" stroke="#dfbcef" stroke-width="2"/>
+      <rect x="67" y="24" width="9" height="7" rx="2" fill="#f3e2ff" stroke="#493568" stroke-width="2"/>
+      <rect x="78" y="24" width="9" height="7" rx="2" fill="#f3e2ff" stroke="#493568" stroke-width="2"/>
+      <path d="M76 27h2m-7 0h.1m10 0h.1m-8 6q2 2 5 0" fill="none" stroke="#493568" stroke-width="1.8"/>
+      <path d="M59 46h12l-3 9H55m32-9h7l1 9h-9" fill="#9162c7" stroke="#4b346b" stroke-width="2"/>
+      <path d="M54 40q-7-3-7 5v11q0 4 5 4h48q5 0 5-4V44q0-7-7-4-3 2-3 9H57q0-8-3-9Z" fill="#c7808b" stroke="#61364e" stroke-width="2.5"/>
+      <path d="M70 43q1-4 5-4l3 1h4l3-1q4 0 5 4l1 6q-1 4-4 2l-4-4h-6l-4 4q-3 2-4-2Z" fill="#f9edf5" stroke="#4a4267" stroke-width="1.7"/>
+      <path d="M73 44h4m-2-2v4m10-2h.1m3 1h.1" stroke="#4a4267" stroke-width="1.45"/>
+    </g>
+  </defs>
+  <use href="#living-room"/>
+  <g transform="translate(108 0)">
+    <use href="#living-room"/>
+    <rect x="8" y="18" width="32" height="20" rx="2" fill="#65adee"/>
+    <path d="M8 34l11-10 5 6 4-5 12 9v2q0 2-2 2H10q-2 0-2-2Z" fill="#3a598c"/>
+    <circle cx="31" cy="24" r="2.6" fill="#ffe8a3"/>
+    <path d="M80 42h2m-43 9h3" stroke="#71c8ff" stroke-width="1.7" stroke-linecap="round"/>
+  </g>
+</svg>

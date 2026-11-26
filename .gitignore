@@ -1,0 +1,15 @@
+# SwiftPM build output and generated Xcode workspace
+/.build/
+/.swiftpm/xcode/
+
+# PWA build output and local Wrangler state
+/dist/
+/.wrangler/
+
+# npm dependencies
+/node_modules/
+
+# Playwright results and reports
+/playwright-report/
+/test-results/
+/blob-report/

@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 216 72">
+  <defs>
+    <g id="laptop" stroke-linecap="round" stroke-linejoin="round">
+      <ellipse cx="53" cy="61" rx="49" ry="5" fill="#171322" opacity=".6"/>
+      <rect x="7" y="16" width="48" height="33" rx="5" fill="#39436d" stroke="#9fb6ef" stroke-width="2.5"/>
+      <rect x="11" y="21" width="40" height="22" rx="2" fill="#99cbf7"/>
+      <path d="M20 28h22m-22 7h14" stroke="#485d91" stroke-width="2.8"/>
+      <path d="M8 47h46l6 6q1 4-4 4H6q-5 0-4-4Z" fill="#717da6" stroke="#bfcdf2" stroke-width="2"/>
+      <path d="M24 51h14" stroke="#dbe7ff" stroke-width="2"/>
+    </g>
+    <g id="closed-notebook" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M67 27h29a4 4 0 0 1 4 4v25H67q-4 0-4-4V31q0-4 4-4Z" fill="#bf629d" stroke="#754763" stroke-width="2"/>
+      <path d="M68 48h31v8H68a4 4 0 0 1 0-8Z" fill="#ffe4e1" stroke="#754763" stroke-width="2"/>
+      <path d="M75 34h15" stroke="#ffd0d8" stroke-width="2.5"/>
+    </g>
+    <g id="open-notebook" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M56 29q12-4 24 4 11-8 24-4v28q-13-3-24 4-12-7-24-4Z" fill="#bf629d" stroke="#754763" stroke-width="2.5"/>
+      <path d="M59 26q12-3 21 5 10-8 21-5v27q-11-3-21 4-9-7-21-4Z" fill="#fff1d4" stroke="#ebc9a4" stroke-width="2"/>
+      <path d="M80 32v24m-15-21 9 3m-9 4 9 3m12-7 9-3m-9 10 9-3" fill="none" stroke="#b49283" stroke-width="1.7"/>
+      <path d="m74 17 3 5 3-5-3-5Zm14-5 2 3 2-3-2-3Z" fill="#ffdd89"/>
+    </g>
+  </defs>
+  <use href="#laptop"/>
+  <use href="#closed-notebook"/>
+  <g transform="translate(108 0)">
+    <use href="#laptop"/>
+    <use href="#open-notebook"/>
+  </g>
+</svg>

@@ -1,0 +1,12 @@
+{
+  "name": "munchies",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:browser": "playwright test"
+  },
+  "devDependencies": {
+    "@bjorn3/browser_wasi_shim": "0.4.1",
+    "@playwright/test": "1.64.1"
+  }
+}

@@ -1,0 +1,90 @@
+name: Verify and deploy Cloudflare Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: munchies-pages-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    container: swift:6.4.3-noble
+    timeout-minutes: 30
+    environment:
+      name: production
+      url: https://munchies-6r6.pages.dev
+    defaults:
+      run:
+        shell: bash
+    env:
+      SWIFT_WASM_SDK: swift-6.4.3-RELEASE_wasm
+    steps:
+      - name: Checkout without credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '26.13.0'
+          package-manager-cache: false
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Verify Swift engine
+        run: swift test --only-use-versions-from-resolved-file
+      - name: Install Swift WebAssembly SDK
+        run: >-
+          swift sdk install
+          https://download.swift.org/swift-6.4.3-release/wasm-sdk/swift-6.4.3-RELEASE/swift-6.4.3-RELEASE_wasm.artifactbundle.tar.gz
+          --checksum 5f24408dc9737ce4cb23b7e3ed4306cabfa02cc02f22ab260b14579b955d4b12
+      - name: Build Cloudflare Pages bundle
+        run: ./build.sh
+      - name: Install browser engines and system libraries
+        run: |
+          npx playwright install --with-deps webkit chromium
+          apt-get install -y --no-install-recommends python3 xauth
+      - name: Verify the bundle that will be deployed
+        run: xvfb-run --auto-servernum npm run test:browser
+      - name: Install pinned Wrangler
+        run: npm install --global --ignore-scripts wrangler@4.156.2
+      - name: Deploy to Cloudflare Pages
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: wrangler pages deploy dist --project-name=munchies --branch=main --commit-hash="$GITHUB_SHA"
+      - name: Verify the production URL serves this release
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFile, readFile } from 'node:fs/promises';
+          import { setTimeout } from 'node:timers/promises';
+
+          const origin = 'https://munchies-6r6.pages.dev';
+          const url = new URL('/sw.js', origin);
+          url.searchParams.set('release', process.env.GITHUB_SHA);
+          const expected = await readFile('dist/sw.js');
+
+          for (let attempt = 0; attempt < 12; attempt++) {
+            let matches = false;
+            try {
+              const response = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(10_000) });
+              matches = response.ok && Buffer.from(await response.arrayBuffer()).equals(expected);
+            } catch {
+              // Retry while the release propagates to the production URL.
+            }
+            if (matches) {
+              await appendFile(process.env.GITHUB_STEP_SUMMARY, `### Cloudflare Pages production\n\n${origin}\n`);
+              process.exit(0);
+            }
+            if (attempt < 11) await setTimeout(5_000);
+          }
+          console.error('::error::Production did not return the expected Munchies service worker.');
+          process.exitCode = 1;
+          NODE

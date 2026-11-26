@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Munchies">
+  <meta name="theme-color" content="#241f47">
+  <meta name="munchies-build" content="dev">
+  <title>Munchies</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="apple-touch-icon" href="./assets/icon-192.png">
+  <link rel="icon" type="image/svg+xml" href="./assets/icon-192.svg">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body data-theme="cozyDefault">
+
+  <!-- HOME SCREEN -->
+  <main id="screen-home" class="screen screen-home">
+    <header class="home-topbar">
+      <div class="spacer"></div>
+      <button type="button" id="btn-home-settings" class="icon-btn" aria-label="Settings" disabled>⚙️</button>
+    </header>
+
+    <aside id="ios-install-banner" class="install-banner" hidden aria-label="Install Munchies">
+      <span>Tap <strong>Share</strong> then <strong>Add to Home Screen</strong> for full-screen play 🧁</span>
+      <button type="button" id="btn-dismiss-install" class="install-dismiss" aria-label="Dismiss install tip">✕</button>
+    </aside>
+
+    <section class="home-hero">
+      <div class="snack-crest" aria-hidden="true">
+        <span>🧁</span><span>🍔</span><span>🥔</span><span>🌮</span><span>🌭</span>
+      </div>
+      <h1 class="app-title">Munchies</h1>
+      <p class="app-subtitle">Cupcake &amp; Teido's Night Owl Match-3</p>
+
+      <div class="stat-strip">
+        <div class="stat-pill">
+          <span class="stat-emoji" aria-hidden="true">⭐️</span>
+          <div>
+            <div class="stat-label">HIGH SCORE</div>
+            <div id="home-highscore" class="stat-value">0</div>
+          </div>
+        </div>
+        <div class="stat-pill">
+          <span class="stat-emoji" aria-hidden="true">🐾</span>
+          <div>
+            <div class="stat-label">PUPPIES</div>
+            <div id="home-puppies" class="stat-value">0</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <footer class="home-actions">
+      <p id="boot-error" role="status" hidden>Munchies couldn’t load. Reload to try again.</p>
+      <button type="button" id="btn-play" class="btn-primary" disabled>▶ Play Endless Run</button>
+      <button type="button" id="btn-scrapbook" class="btn-secondary" disabled>
+        <span>📸 Couple's Scrapbook</span>
+        <span id="home-scrapbook-count" class="pill-count">0 tiers</span>
+      </button>
+    </footer>
+  </main>
+
+  <!-- GAMEPLAY SCREEN -->
+  <main id="screen-game" class="screen screen-game" hidden>
+    <!-- Top Safe Area: Co-op Corner Avatars + Score + Snore-O-Meter + Tier Bar -->
+    <header class="hud-header">
+      <div class="hud-top-row">
+        <!-- Cupcake Avatar -->
+        <div id="avatar-cupcake" class="avatar-card" data-state="idle">
+          <div class="avatar-ring avatar-cupcake-ring">
+            <span class="avatar-face cupcake-face" aria-hidden="true"></span>
+            <span class="avatar-badge cupcake-badge" aria-hidden="true"></span>
+            <span id="cupcake-sleeping-puppy" class="sleeping-puppy" hidden title="Adopted Puppy">🐶</span>
+          </div>
+          <span class="avatar-name">Cupcake</span>
+        </div>
+
+        <!-- Score & Tier -->
+        <div class="score-center">
+          <div class="tier-row">
+            <span id="hud-tier" class="tier-pill">TIER 1</span>
+            <button type="button" id="btn-pause" class="pause-btn" aria-label="Pause">⏸</button>
+          </div>
+          <div id="hud-score" class="score-value">0</div>
+          <div id="hud-best" class="best-value">BEST 0</div>
+        </div>
+
+        <!-- Teido Avatar -->
+        <div id="avatar-teido" class="avatar-card" data-state="gaming">
+          <div class="avatar-ring avatar-teido-ring">
+            <span class="avatar-face teido-face" aria-hidden="true"></span>
+            <span class="teido-pad-thai" aria-hidden="true"></span>
+            <span class="teido-controller" aria-hidden="true"></span>
+            <span class="avatar-badge teido-badge" aria-hidden="true"></span>
+          </div>
+          <span class="avatar-name">Teido</span>
+        </div>
+      </div>
+
+      <div class="meters-row">
+        <div class="meter-block">
+          <div class="meter-meta">
+            <span id="hud-snore-count">😴 Snore 0/12</span>
+            <span class="meter-accent-blue">Zzz</span>
+          </div>
+          <div class="meter-track">
+            <div id="hud-snore-bar" class="meter-fill meter-snore" style="width: 0%"></div>
+          </div>
+        </div>
+
+        <div class="meter-block">
+          <div class="meter-meta">
+            <span id="hud-tier-label">🌙 Night Owl Tier</span>
+            <span id="hud-tier-pct" class="meter-accent-gold">0%</span>
+          </div>
+          <div class="meter-track">
+            <div id="hud-tier-bar" class="meter-fill meter-tier" style="width: 0%"></div>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- 8x9 HiDPI Canvas -->
+    <section id="board-stage" class="board-stage">
+      <canvas id="board-canvas" aria-label="Munchies 8 by 9 Match-3 Game Board" aria-busy="false"></canvas>
+    </section>
+
+    <section class="event-strip" aria-label="Run events">
+      <div class="event-strip-side">
+        <button type="button" id="event-latest" class="event-latest" aria-label="Show latest event" hidden>
+          Latest <span aria-hidden="true">→</span>
+        </button>
+        <span class="event-strip-label" aria-hidden="true">
+          Run events <span class="event-strip-arrows">↔</span>
+        </span>
+      </div>
+      <div id="event-viewport" class="event-viewport" tabindex="0" role="group" aria-label="Event history">
+        <p id="event-empty" class="event-empty">Run events will appear here.</p>
+        <ol id="event-history" class="event-history" role="list"></ol>
+      </div>
+      <span id="event-status" class="event-status" role="status" aria-atomic="true"></span>
+    </section>
+
+    <!-- Bottom Safe Area (~110px thumb-rest zone above iOS Home Indicator) -->
+    <footer class="thumb-dock">
+      <div class="dock-card">
+        <span class="dock-icon" aria-hidden="true">🔥</span>
+        <div>
+          <div class="dock-label">COMBO</div>
+          <div id="hud-combo" class="dock-value">1x</div>
+        </div>
+      </div>
+
+      <div class="dock-card">
+        <span class="dock-icon" aria-hidden="true">🐾</span>
+        <div>
+          <div class="dock-label">PUPPIES</div>
+          <div id="hud-puppies" class="dock-value">0</div>
+        </div>
+      </div>
+
+      <button type="button" id="btn-shuffle" class="dock-card dock-shuffle">
+        <span class="dock-icon" aria-hidden="true">🌭</span>
+        <div>
+          <div class="dock-label">SHUFFLE</div>
+          <div id="hud-shuffles" class="dock-value">1/2</div>
+        </div>
+      </button>
+    </footer>
+  </main>
+
+  <!-- SETTINGS / PAUSE MODAL (Native <dialog> with light-dismiss) -->
+  <dialog id="dialog-settings" closedby="any" aria-labelledby="settings-title">
+    <div class="dialog-head">
+      <h1 id="settings-title">Settings</h1>
+      <form method="dialog">
+        <button type="submit" class="dialog-close" aria-label="Close settings" autofocus>Done</button>
+      </form>
+    </div>
+
+    <div class="settings-list">
+      <label class="setting-row">
+        <span>🔊 Sound Effects</span>
+        <input type="checkbox" id="toggle-sfx" checked>
+      </label>
+      <label class="setting-row">
+        <span>🎵 Background Music</span>
+        <input type="checkbox" id="toggle-music" checked>
+      </label>
+      <label class="setting-row">
+        <span>😴 Goofy Snore Sounds</span>
+        <input type="checkbox" id="toggle-snore" checked>
+      </label>
+      <label class="setting-row">
+        <span>📳 Screen Shake</span>
+        <input type="checkbox" id="toggle-shake" checked>
+      </label>
+    </div>
+
+    <div id="settings-ingame-actions" class="settings-actions" hidden>
+      <button type="button" id="btn-settings-restart" class="btn-secondary">↺ Restart Run</button>
+      <button type="button" id="btn-settings-home" class="btn-danger">🏠 Back to Home</button>
+    </div>
+
+    <div id="settings-updates" class="settings-actions">
+      <button type="button" id="btn-check-updates" class="btn-secondary">Check for updates</button>
+      <p id="update-status" class="update-status" role="status"></p>
+    </div>
+  </dialog>
+
+  <!-- COUPLE'S MILESTONE SCRAPBOOK MODAL -->
+  <dialog id="dialog-scrapbook" class="dialog-tall" closedby="any" aria-labelledby="scrapbook-title">
+    <div class="dialog-head">
+      <h1 id="scrapbook-title">Couple's Scrapbook</h1>
+      <form method="dialog">
+        <button type="submit" class="dialog-close" aria-label="Close scrapbook" autofocus>Done</button>
+      </form>
+    </div>
+
+    <div class="scrapbook-summary">
+      <div class="summary-pill"><strong id="scrapbook-unlocked-count">0</strong><span>Tiers earned</span></div>
+      <div class="summary-pill"><strong id="scrapbook-total-puppies">0 🐾</strong><span>Puppies</span></div>
+      <div class="summary-pill"><strong id="scrapbook-best-tier">T1</strong><span>Best run tier</span></div>
+    </div>
+
+    <div class="theme-section">
+      <div class="section-caption">Board Backdrop</div>
+      <div id="scrapbook-themes" class="theme-row"></div>
+    </div>
+
+    <div id="scrapbook-grid" class="polaroid-grid"></div>
+  </dialog>
+
+  <!-- GAME OVER MODAL (closedby="none" so player chooses Replay or Home explicitly) -->
+  <dialog id="dialog-gameover" closedby="none" aria-labelledby="gameover-title">
+    <div class="gameover-body">
+      <div id="gameover-icon" class="gameover-icon" aria-hidden="true">😴💤</div>
+      <h1 id="gameover-title">Teido Woke the Whole Neighborhood!</h1>
+      <div id="gameover-record-badge" class="record-badge" hidden>NEW HIGH SCORE!</div>
+
+      <div class="gameover-stats">
+        <div class="go-row"><span>⭐ Final Score</span><strong id="gameover-score">0</strong></div>
+        <div class="go-row"><span>🌙 Night Owl Tier</span><strong id="gameover-tier">Tier 1</strong></div>
+        <div class="go-row"><span>💖 Puppies Rescued</span><strong id="gameover-puppies">0 🐾</strong></div>
+        <div class="go-row"><span>💤 Snores Popped</span><strong id="gameover-snores">0</strong></div>
+        <div class="go-row"><span>🔥 Max Cascade</span><strong id="gameover-cascade">0x</strong></div>
+      </div>
+
+      <div class="gameover-actions">
+        <button type="button" id="btn-gameover-home" class="btn-secondary">Home</button>
+        <button type="button" id="btn-gameover-replay" class="btn-primary" autofocus>▶ Play Again</button>
+      </div>
+    </div>
+  </dialog>
+
+  <script type="importmap">
+    { "imports": { "@bjorn3/browser_wasi_shim": "./runtime/wasi/index.js" } }
+  </script>
+  <script type="module" src="./bootstrap.js"></script>
+</body>
+</html>
