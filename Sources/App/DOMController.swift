@@ -6,11 +6,14 @@ import JavaScriptKit
 final class DOMController {
     private let document = JSObject.global.document.object!
     private var closures: [JSClosure] = []
+    private var displayedSnackRun: SnackRunState = .idle
 
     var onPlayTapped: (() -> Void)?
     var onHomeTapped: (() -> Void)?
     var onRestartTapped: (() -> Void)?
     var onShuffleTapped: (() -> Void)?
+    var onSnackRunSelected: ((SnackRunKind) -> Void)?
+    var onSnackRunSkipped: (() -> Void)?
     var onSettingsChanged: ((Bool, Bool, Bool, Bool) -> Void)?
     var onThemeSelected: ((BackdropTheme) -> Void)?
     var onPauseChanged: ((Bool) -> Void)?
@@ -21,6 +24,9 @@ final class DOMController {
         bindClick("btn-home-settings") { [weak self] in self?.openDialog("dialog-settings") }
         bindClick("btn-pause") { [weak self] in self?.openDialog("dialog-settings") }
         bindClick("btn-shuffle") { [weak self] in self?.onShuffleTapped?() }
+        bindClick("snack-run-dash") { [weak self] in self?.onSnackRunSelected?(.biltemaDash) }
+        bindClick("snack-run-poke") { [weak self] in self?.onSnackRunSelected?(.pokeOrder) }
+        bindClick("snack-run-skip") { [weak self] in self?.onSnackRunSkipped?() }
         bindClick("btn-settings-restart") { [weak self] in
             self?.closeDialog("dialog-settings")
             self?.onRestartTapped?()
@@ -88,6 +94,60 @@ final class DOMController {
         setText("home-puppies", "\(storage.data.totalPuppiesRescued)")
         let tiersEarned = storage.tiersEarned
         setText("home-scrapbook-count", "\(tiersEarned) \(tiersEarned == 1 ? "tier" : "tiers")")
+    }
+
+    func updateSnackRun(_ state: SnackRunState) {
+        setSnackRunControlsEnabled(true)
+        guard state != displayedSnackRun else { return }
+        displayedSnackRun = state
+        let visible = state != .idle
+        byId("snack-run-panel")?.hidden = .boolean(!visible)
+        byId("run-events")?.hidden = .boolean(visible)
+        switch state {
+        case .idle:
+            break
+        case .offered(let goals):
+            byId("snack-run-choices")?.hidden = .boolean(false)
+            byId("snack-run-progress")?.hidden = .boolean(true)
+            byId("snack-run-dash")?.hidden = .boolean(!goals.contains { $0.kind == .biltemaDash })
+            byId("snack-run-poke")?.hidden = .boolean(!goals.contains { $0.kind == .pokeOrder })
+            for goal in goals {
+                if case .pokeOrder(let ingredient) = goal {
+                    setText("snack-run-poke-detail", "\(snackName(ingredient)) → Poke · Fiesta Bomb")
+                }
+            }
+            setText("snack-run-skip", "Skip")
+        case .active(let run):
+            byId("snack-run-choices")?.hidden = .boolean(true)
+            byId("snack-run-progress")?.hidden = .boolean(false)
+            setText("snack-run-title", run.goal.kind.title)
+            let remaining = run.movesRemaining
+            setText("snack-run-moves", "\(remaining) \(remaining == 1 ? "swap" : "swaps") left")
+            setText("snack-run-reward", "Earn a \(run.goal.kind.rewardName)")
+            switch run.goal {
+            case .biltemaDash:
+                let count = run.remainingReceipts.count
+                setText("snack-run-task", "Clear \(count) marked \(count == 1 ? "receipt" : "receipts")")
+            case .pokeOrder(let ingredient):
+                let first = snackName(ingredient)
+                setText("snack-run-task", run.ingredientsMatched == 0 ? "Match \(first), then Poke" : "\(first) ✓ · Match Poke")
+            }
+            setText("snack-run-skip", "Leave")
+        }
+    }
+
+    func setSnackRunControlsEnabled(_ enabled: Bool) {
+        for id in ["snack-run-dash", "snack-run-poke", "snack-run-skip"] {
+            byId(id)?.disabled = .boolean(!enabled)
+        }
+    }
+
+    private func snackName(_ kind: StandardTileKind) -> String {
+        switch kind {
+        case .hermanosTaco: "Taco"
+        case .biltemaCombo: "Biltema"
+        default: kind.displayName
+        }
     }
 
     func updateHUD(

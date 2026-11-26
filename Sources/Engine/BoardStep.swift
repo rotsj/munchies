@@ -83,6 +83,8 @@ public enum BoardStep: Hashable, Sendable {
     case teidoComboAchievement(rocketSpawnedAt: GridPos, tile: Tile)
     case tierUp(newTier: Int, surge: CravingSurge, bannerText: String, poppedSnores: [GridPos], bonusPoints: Int, earnedShuffle: Bool)
     case boardShuffled(moves: [TileMove], usedEmergencyShuffle: Bool)
+    case snackRunCompleted(kind: SnackRunKind, at: GridPos, tile: Tile)
+    case snackRunExpired(kind: SnackRunKind)
     case avatarReaction(AvatarReaction)
     case gameOver(reason: GameOverReason)
 }

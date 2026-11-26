@@ -37,6 +37,12 @@ private struct GameEvent {
             return GameEvent(title: "Combo achievement!", detail: "Teido added a Korv Rocket.", art: .teido)
         case .boardShuffled(_, let usedEmergency):
             return GameEvent(title: "Korv Shuffle", detail: usedEmergency ? "Used an emergency shuffle." : "New moves opened up.", art: .shuffle)
+        case .snackRunCompleted(let kind, _, _):
+            return GameEvent(title: "\(kind.title) complete!", detail: "\(kind.rewardName) added to the board.",
+                             art: kind == .biltemaDash ? .biltema : .poke)
+        case .snackRunExpired(let kind):
+            return GameEvent(title: "\(kind.title) expired", detail: "Six swaps used.",
+                             art: kind == .biltemaDash ? .biltema : .poke)
         case .specialCreated(_, let tile):
             switch tile.special {
             case .korvRocket:
@@ -78,6 +84,7 @@ final class GameEventStrip {
     private lazy var empty = document.getElementById?("event-empty").object
     private lazy var latest = document.getElementById?("event-latest").object
     private lazy var status = document.getElementById?("event-status").object
+    private var pendingResultCard: JSObject?
     private var handlers: [JSClosure] = []
     private var currentCard: JSObject?
     private var timer: Double?
@@ -120,6 +127,7 @@ final class GameEventStrip {
     func reset() {
         clearTimer()
         currentCard = nil
+        pendingResultCard = nil
         following = true
         suspended = false
         poppedSnores = 0
@@ -138,8 +146,14 @@ final class GameEventStrip {
         suspended = value
         clearTimer()
         if !value && following {
-            if currentCard == nil { showNext() }
-            else { startDwell() }
+            if let card = pendingResultCard {
+                pendingResultCard = nil
+                show(card)
+            } else if currentCard == nil {
+                showNext()
+            } else {
+                startDwell()
+            }
         }
     }
 
@@ -151,6 +165,8 @@ final class GameEventStrip {
             matchedSnacks.formUnion(kinds)
         case .avatarReaction(.teidoComboWakeUp(let depth)):
             appendOncePerRun(.couchCombo(depth: depth))
+        case .snackRunCompleted, .snackRunExpired:
+            if let event = GameEvent.from(step) { append(event, prioritize: true) }
         default:
             guard let event = GameEvent.from(step) else { return }
             if case .specialCreated = step, !announcedSpecials.insert(event.art).inserted { return }
@@ -173,7 +189,7 @@ final class GameEventStrip {
         if announcedRunEvents.insert(event.art).inserted { append(event) }
     }
 
-    private func append(_ event: GameEvent) {
+    private func append(_ event: GameEvent, prioritize: Bool = false) {
         guard let history else { return }
         let card = element("li", className: "event-card")
         card.dataset.art = .string(event.art.rawValue)
@@ -201,7 +217,12 @@ final class GameEventStrip {
             _ = first.remove?()
             viewport?.scrollLeft = .number(max(0, offset))
         }
-        if timer == nil { showNext() }
+        if prioritize && following {
+            if suspended { pendingResultCard = card }
+            else { show(card) }
+        } else if timer == nil {
+            showNext()
+        }
         updateLatestButton()
     }
 

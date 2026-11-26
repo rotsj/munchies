@@ -7,6 +7,8 @@ public struct CascadeResolver: Sendable {
     public var nextPuppyScoreThreshold: Int
     public var isGameOver: Bool
     public var gameOverReason: GameOverReason?
+    public private(set) var snackRun: SnackRunState = .idle
+    private var pendingSnackRunReward: SnackRunKind?
 
     public init(seed: UInt64 = 42, startingTier: Int = 1) {
         var initialBoard = BoardState(seed: seed)
@@ -37,6 +39,45 @@ public struct CascadeResolver: Sendable {
     }
 
     public mutating func performSwap(from a: GridPos, to b: GridPos) -> [BoardStep] {
+        let previousMoves = stats.movesMade
+        var steps = resolveSwap(from: a, to: b)
+        guard stats.movesMade > previousMoves, !isGameOver else { return steps }
+
+        if case .active(var run) = snackRun {
+            run.apply(SnackRunTurn(steps: steps))
+            if run.isComplete {
+                pendingSnackRunReward = run.goal.kind
+                snackRun = .idle
+            } else if run.movesRemaining == 0 {
+                steps.append(.snackRunExpired(kind: run.goal.kind))
+                snackRun = .idle
+            } else {
+                snackRun = .active(run)
+            }
+        } else {
+            snackRun = .idle
+            if pendingSnackRunReward == nil, SnackRunPlanner.isOfferTurn(stats.movesMade) {
+                let goals = SnackRunPlanner.goals(for: self)
+                if !goals.isEmpty { snackRun = .offered(goals) }
+            }
+        }
+        awardSnackRunReward(steps: &steps)
+        return steps
+    }
+
+    public mutating func acceptSnackRun(_ kind: SnackRunKind) -> Bool {
+        guard !isGameOver, case .offered(let goals) = snackRun,
+              let goal = goals.first(where: { $0.kind == kind }) else { return false }
+        snackRun = .active(ActiveSnackRun(goal: goal))
+        return true
+    }
+
+    public mutating func skipSnackRun() {
+        snackRun = .idle
+    }
+
+    // Offer planning replays the same turns without generating new offers or rewards.
+    mutating func resolveSwap(from a: GridPos, to b: GridPos) -> [BoardStep] {
         guard !isGameOver else { return [] }
         guard MoveValidator.isValidSwap(from: a, to: b, in: board) else {
             return [.swap(from: a, to: b, reverted: true)]
@@ -176,15 +217,54 @@ public struct CascadeResolver: Sendable {
         guard !isGameOver, stats.availableShuffles > 0 else { return [] }
         let moves = MoveValidator.shuffleBoard(&board)
         if moves.isEmpty && !MoveValidator.findAllValidMoves(in: board).isEmpty { return [] }
+        if case .offered = snackRun { snackRun = .idle }
         stats.availableShuffles -= 1
         var steps: [BoardStep] = [.boardShuffled(moves: moves, usedEmergencyShuffle: true)]
         if moves.isEmpty && stats.availableShuffles == 0 { endRun(.noValidMoves, steps: &steps) }
         return steps
     }
 
+    private mutating func awardSnackRunReward(steps: inout [BoardStep]) {
+        guard let kind = pendingSnackRunReward,
+              let position = snackRunRewardPosition(), var tile = board[position] else { return }
+        tile.special = kind.reward
+        board[position] = tile
+        if tile.special == .fiestaBomb { stats.fiestaBombsCreated += 1 }
+        pendingSnackRunReward = nil
+        steps.append(.snackRunCompleted(kind: kind, at: position, tile: tile))
+    }
+
+    private func snackRunRewardPosition() -> GridPos? {
+        func eligible(_ position: GridPos) -> Bool {
+            guard let tile = board[position] else { return false }
+            return tile.kind.standardKind != nil && !tile.isLockedBySnore && !tile.special.isSpecial
+        }
+
+        // Prefer an ordinary snack that already participates in a possible match.
+        for move in MoveValidator.findAllValidMoves(in: board) {
+            var swapped = board
+            swapped.swapTiles(at: move.from, and: move.to)
+            for group in swapped.findMatches() {
+                for position in group.positions.sorted() {
+                    let original = position == move.from ? move.to : (position == move.to ? move.from : position)
+                    if eligible(original) { return original }
+                }
+            }
+        }
+        for row in 0..<BoardState.rows {
+            for col in 0..<BoardState.cols {
+                let position = GridPos(row: row, col: col)
+                if eligible(position) { return position }
+            }
+        }
+        return nil
+    }
+
     private mutating func endRun(_ reason: GameOverReason, steps: inout [BoardStep]) {
         isGameOver = true
         gameOverReason = reason
+        snackRun = .idle
+        pendingSnackRunReward = nil
         steps.append(.gameOver(reason: reason))
     }
 

@@ -101,7 +101,7 @@ Shared snacks (**Hermanos Tacos**, **Partille Poke Bowls**, and **Biltema Combos
 | **Tiers 1–3** *(Warm-Up)* | 1 bubble every **6 moves** | Standard 1-hit bubble | Every **12,000 pts** *(faster in Tier 3)* | `1.0x` base multiplier; high match-assist spawn bias. |
 | **Tiers 4–7** *(Getting Cozy)* | 1 bubble every **5 moves** | Standard + **Double-Zzz** (2 hits) | Every **20,000 pts** | `1.5x` base multiplier; neutral spawn weighting. |
 | **Tiers 8–12** *(Light Sleeper Alert)* | 1 bubble every **4 moves** | Standard + Double-Zzz + **Drifting** (rises 1 row / 3 turns) | Every **30,000 pts** (up to **2 puppies** at once) | `2.0x` base multiplier; mild anti-clump spawning requires intentional special setups. |
-| **Tiers 13+** *(Deep REM Overtime)* | Caps at **1 bubble every 3 moves** (hard ceiling) | Full mix (capped density) | Every **40,000 pts** (rescuing clears $5 \times 5$) | Multiplier scales `+0.25x` per tier infinitely; pure high-score endurance chase. |
+| **Tiers 13+** *(Deep REM Overtime)* | Caps at **1 bubble every 3 moves** (hard ceiling) | Full mix (capped density) | Every **40,000 pts** (rescuing clears $5 \times 5$) | Multiplier scales `+0.25x` per tier infinitely. |
 
 ### D. Couple's Milestone Scrapbook (Passive Meta-Progression)
 A gallery view accessible from the Home Screen that shows eight illustrated Polaroid tracks. Tier 1 keeps the original requirements and cosmetic rewards:
@@ -115,6 +115,14 @@ A gallery view accessible from the Home Screen that shows eight illustrated Pola
 8. **Survived Teido's Snoring** — *Pop 50 Snore Bubbles* (Unlocks cozy midnight-blue "Light Sleeper" theme).
 
 Each track always shows its next tier. Tier `n` asks for `n` times the first goal in additional progress, so Korv Dash reaches Tier 2 at 30,000 lifetime points and Tier 3 at 60,000. Surplus counts toward the next goal. Partille Poke Date counts each turn that reaches a cascade of 5× or more once. A legacy save with a qualifying best cascade starts with one qualifying turn. The album shows tiers earned without a completion cap.
+
+### E. Optional Snack Runs
+
+- After successful swaps **10, 35, 60, ...**, the game offers the Snack Runs that have a verified route on the settled board. Each offer can be accepted, skipped, or dismissed by making another successful swap or an emergency shuffle. Invalid swaps leave the offer available.
+- Accepting a challenge gives the player up to **six successful swaps** to complete it. Failed attempts, time spent, and emergency shuffles do not use that allowance. The player can leave a challenge early. Skipping, leaving, and expiring carry no penalty. The next offer follows the same swap schedule.
+- **Biltema Dash.** Clear the three cells marked with receipts. Matches and blasts collect receipts from the cells they clear. The markers stay on those cells until collected, including through gravity and shuffles. The reward is a horizontal **Korv Rocket**.
+- **Partille Poke Order.** Match the displayed first ingredient, then match Partille Poke on a later successful swap. The order favors Hermanos Taco when a route is available. Each swap advances at most one ingredient, including through cascades. Blast damage alone does not count as a match. The reward is a **Fiesta Bomb**.
+- An accepted Snack Run uses the run event area to show its goal and swaps left. Completion places one reward on an ordinary, unlocked snack, favoring a tile that can take part in a match. If no tile is eligible, placement waits for a later successful swap. Normal scoring and tier progression continue throughout. Ending the game clears the Snack Run.
 
 ---
 

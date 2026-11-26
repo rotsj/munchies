@@ -17,8 +17,8 @@ const emptyProgress = {
   selectedBackdrop: 'cozyDefault',
 };
 
-async function instrument(page, { sound = false, progress, gameSeed } = {}) {
-  await page.addInitScript(({ sound, progress, progressKey, gameSeed }) => {
+async function instrument(page, { sound = false, progress, gameSeed, snackRuns = false } = {}) {
+  await page.addInitScript(({ sound, progress, progressKey, gameSeed, snackRuns }) => {
     if (progress && localStorage.getItem(progressKey) === null) {
       localStorage.setItem(progressKey, JSON.stringify(progress));
     }
@@ -44,12 +44,15 @@ async function instrument(page, { sound = false, progress, gameSeed } = {}) {
     const sprites = new WeakMap();
     const probe = Object.assign(window.munchiesProbe ??= {}, {
       frame: [], contexts: 0, resumes: 0, tones: [], audioTime: 0, musicBuffers: 0, musicStarts: [], musicStops: 0,
-      rasterizedSprites: new Set(),
+      rasterizedSprites: new Set(), receipts: 0,
     });
     const canvas = CanvasRenderingContext2D.prototype;
     const clear = canvas.clearRect;
     canvas.clearRect = function (...args) {
-      if (this.canvas.id === 'board-canvas') probe.frame = [];
+      if (this.canvas.id === 'board-canvas') {
+        probe.frame = [];
+        probe.receipts = 0;
+      }
       return clear.apply(this, args);
     };
     const draw = canvas.drawImage;
@@ -74,12 +77,21 @@ async function instrument(page, { sound = false, progress, gameSeed } = {}) {
     };
     const fillText = canvas.fillText;
     canvas.fillText = function (text, ...args) {
-      if (this.canvas.id === 'board-canvas' && text === '🍦') {
+      if (this.canvas.id === 'board-canvas') {
         const tile = probe.frame.at(-1);
-        if (tile) tile.wild = true;
+        if (tile && text === '🍦') tile.wild = true;
+        if (tile && snackRuns && ['↔', '↕', '✦'].includes(text)) tile.special = text;
       }
       return fillText.call(this, text, ...args);
     };
+
+    if (snackRuns) {
+      const fill = canvas.fill;
+      canvas.fill = function (...args) {
+        if (this.canvas.id === 'board-canvas' && this.fillStyle === '#fff2bf') probe.receipts++;
+        return fill.apply(this, args);
+      };
+    }
 
     if (sound) {
       window.AudioContext = class {
@@ -129,7 +141,7 @@ async function instrument(page, { sound = false, progress, gameSeed } = {}) {
         }
       };
     }
-  }, { sound, progress, progressKey, gameSeed });
+  }, { sound, progress, progressKey, gameSeed, snackRuns });
 }
 
 async function frame(page) {
@@ -781,6 +793,128 @@ test('Cupcake and PS5 scenes follow their triggers once per run, with the couch 
   await expect(schedule).toHaveCount(1);
   await expect(gemini).toHaveCount(1);
   await expect(couch).toHaveCount(1);
+});
+
+const snackRunOpening = [
+  [[4, 0], [4, 1]], [[0, 5], [0, 6]], [[1, 4], [1, 5]], [[2, 3], [2, 4]], [[3, 4], [4, 4]],
+  [[3, 3], [3, 4]], [[4, 4], [5, 4]], [[5, 1], [5, 2]], [[0, 0], [0, 1]], [[2, 0], [2, 1]],
+];
+
+async function playToSnackRunOffer(page) {
+  const canvas = page.locator('#board-canvas');
+  const panel = page.getByRole('region', { name: 'Snack Runs' });
+  const events = page.getByRole('region', { name: 'Run events' });
+  for (const positions of snackRunOpening.slice(0, 9)) {
+    await playTurn(page, positions);
+    await expect(panel).toBeHidden();
+  }
+  const bounds = await canvas.boundingBox();
+  await playTurn(page, snackRunOpening[9]);
+  await expect(panel).toBeVisible();
+  await expect(events).toBeHidden();
+  await expect(panel.getByRole('button', { name: 'Biltema Dash' })).toBeVisible();
+  await expect(panel.getByRole('button', { name: 'Partille Poke Order' })).toBeVisible();
+  const offeredBounds = await canvas.boundingBox();
+  for (const edge of ['x', 'y', 'width', 'height']) expect(offeredBounds[edge]).toBeCloseTo(bounds[edge], 0);
+  return { canvas, panel, events };
+}
+
+async function openSnackRunOffer(page) {
+  await instrument(page, { gameSeed: 42, snackRuns: true });
+  await openGame(page, { manualFrames: true });
+  return playToSnackRunOffer(page);
+}
+
+for (const run of [
+  {
+    title: 'Biltema Dash', opening: 'Clear 3 marked receipts', advanced: 'Clear 2 marked receipts',
+    first: [[1, 2], [2, 2]], second: [[0, 3], [1, 3]],
+    reward: 'Korv Rocket', art: 'biltema', at: [0, 1], icon: '↔', receipts: [3, 2],
+  },
+  {
+    title: 'Partille Poke Order', opening: 'Match Taco, then Poke', advanced: 'Taco ✓ · Match Poke',
+    first: [[1, 3], [2, 3]], second: [[0, 0], [0, 1]],
+    reward: 'Fiesta Bomb', art: 'poke', at: [2, 0], icon: '✦', receipts: [0, 0],
+  },
+]) {
+  test(`${run.title} tracks a real board objective and adds its reward`, async ({ page }) => {
+    const { canvas, panel, events } = await openSnackRunOffer(page);
+    const score = page.locator('#hud-score');
+    const offerScore = await score.textContent();
+    const receiptCount = () => page.evaluate(() => window.munchiesProbe.receipts);
+    await panel.getByRole('button', { name: run.title }).tap();
+    const progress = panel.getByRole('status');
+    await expect(progress).toContainText(run.opening);
+    await expect(progress).toContainText('6 swaps left');
+    await expect(progress).toContainText(`Earn a ${run.reward}`);
+    await expect(score).toHaveText(offerScore);
+    expect(await receiptCount()).toBe(run.receipts[0]);
+
+    await playTurn(page, run.first);
+    await expect(progress).toContainText(run.advanced);
+    await expect(progress).toContainText('5 swaps left');
+    expect(await receiptCount()).toBe(run.receipts[1]);
+
+    await playTurn(page, run.second);
+    await expect(panel).toBeHidden();
+    await expect(events).toBeVisible();
+    const result = events.locator('.event-card.is-current');
+    await expect(result).toContainText(`${run.title} complete!`);
+    await expect(result).toContainText(`${run.reward} added to the board.`);
+    await expect(result).toHaveAttribute('data-art', run.art);
+    const [row, col] = run.at;
+    expect((await frame(page))[row][col].special).toBe(run.icon);
+    expect(await receiptCount()).toBe(0);
+    await expect(canvas).not.toHaveAttribute('aria-description', /Biltema receipts/);
+  });
+}
+
+test('ignoring a Snack Run offer lets the next board swap play normally', async ({ page }) => {
+  const { panel, events } = await openSnackRunOffer(page);
+  await expect(panel.getByRole('button', { name: 'Skip', exact: true })).toBeVisible();
+  const previousScore = Number(await page.locator('#hud-score').textContent());
+  await playTurn(page, [[1, 2], [2, 2]]);
+  await expect(panel).toBeHidden();
+  await expect(events).toBeVisible();
+  expect(Number(await page.locator('#hud-score').textContent())).toBeGreaterThan(previousScore);
+  await expect(events.getByText('Biltema Dash complete!')).toHaveCount(0);
+});
+
+test('Snack Runs fit a compact screen and can be skipped or left', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 600 });
+  const { panel, events } = await openSnackRunOffer(page);
+  const buttons = panel.getByRole('button');
+  const fits = await buttons.evaluateAll(elements => elements.every(button => {
+    const rect = button.getBoundingClientRect();
+    return rect.height >= 44 && rect.width >= 44 && Array.from(button.children).every(child => {
+      const text = child.getBoundingClientRect();
+      return text.left >= rect.left && text.right <= rect.right && text.top >= rect.top && text.bottom <= rect.bottom;
+    });
+  }));
+  expect(fits).toBeTruthy();
+
+  const score = page.locator('#hud-score');
+  const beforeSkip = await score.textContent();
+  await panel.getByRole('button', { name: 'Skip', exact: true }).tap();
+  await expect(panel).toBeHidden();
+  await expect(events).toBeVisible();
+  await expect(score).toHaveText(beforeSkip);
+
+  await page.getByRole('button', { name: 'Pause' }).tap();
+  await page.getByRole('button', { name: /Restart Run/ }).tap();
+  await playToSnackRunOffer(page);
+  await panel.getByRole('button', { name: 'Biltema Dash' }).tap();
+  await expect(panel.getByRole('status')).toContainText('6 swaps left');
+  expect(await page.evaluate(() => window.munchiesProbe.receipts)).toBe(3);
+
+  await page.getByRole('button', { name: 'Pause' }).tap();
+  await page.getByRole('button', { name: 'Close settings' }).tap();
+  await expect(panel.getByRole('status')).toContainText('6 swaps left');
+  await panel.getByRole('button', { name: 'Leave', exact: true }).tap();
+  await expect(panel).toBeHidden();
+  await expect(events).toBeVisible();
+  await expect(score).toHaveText(beforeSkip);
+  expect(await page.evaluate(() => window.munchiesProbe.receipts)).toBe(0);
 });
 
 test('making progress and leaving a run saves cumulative score and earns a Polaroid exactly once', async ({ page }) => {
