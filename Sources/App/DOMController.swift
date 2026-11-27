@@ -4,11 +4,15 @@ import JavaScriptKit
 /// Swift-driven DOM controller managing the Home Screen, reactive Cupcake & Teido HUD,
 /// native `<dialog>` modals (Settings, Scrapbook, Game Over), and theme classes.
 final class DOMController {
+    private static let pausingDialogs = ["dialog-settings", "dialog-run-journal"]
     private let document = JSObject.global.document.object!
     private var closures: [JSClosure] = []
     private var displayedSnackRun: SnackRunState = .idle
 
     var onPlayTapped: (() -> Void)?
+    var onMissionsTapped: (() -> Void)?
+    var onMissionSelected: ((MiniMission) -> Void)?
+    var onMissionNextTapped: (() -> Void)?
     var onHomeTapped: (() -> Void)?
     var onRestartTapped: (() -> Void)?
     var onShuffleTapped: (() -> Void)?
@@ -20,6 +24,8 @@ final class DOMController {
 
     func wireEvents() {
         bindClick("btn-play") { [weak self] in self?.onPlayTapped?() }
+        bindClick("btn-missions") { [weak self] in self?.onMissionsTapped?() }
+        bindClick("btn-run-journal") { [weak self] in self?.openDialog("dialog-run-journal") }
         bindClick("btn-scrapbook") { [weak self] in self?.openDialog("dialog-scrapbook") }
         bindClick("btn-home-settings") { [weak self] in self?.openDialog("dialog-settings") }
         bindClick("btn-pause") { [weak self] in self?.openDialog("dialog-settings") }
@@ -43,6 +49,7 @@ final class DOMController {
             self?.closeDialog("dialog-gameover")
             self?.onHomeTapped?()
         }
+        wireMissions()
 
         for id in ["toggle-sfx", "toggle-music", "toggle-snore", "toggle-shake"] {
             if let el = byId(id) {
@@ -54,14 +61,78 @@ final class DOMController {
                 _ = el.addEventListener?("change", c)
             }
         }
-        if let dialog = byId("dialog-settings") {
+        for id in Self.pausingDialogs {
+            guard let dialog = byId(id) else { continue }
             let onClose = JSClosure { [weak self] _ -> JSValue in
-                self?.onPauseChanged?(false)
+                self?.notifyPauseState()
                 return .undefined
             }
             closures.append(onClose)
             _ = dialog.addEventListener?("close", onClose)
         }
+    }
+
+    private func wireMissions() {
+        guard let list = byId("mission-list") else { return }
+        for mission in MiniMission.allCases {
+            let id = "mission-\(mission.rawValue)"
+            let row = document.createElement!("li").object!
+            let button = document.createElement!("button").object!
+            button.id = .string(id)
+            button.type = .string("button")
+            button.className = .string("mission-choice")
+            _ = button.setAttribute?("aria-labelledby", "\(id)-title")
+            _ = button.setAttribute?("aria-describedby", "\(id)-status \(id)-detail")
+            let title = document.createElement!("strong").object!
+            title.id = .string("\(id)-title")
+            title.textContent = .string(mission.title)
+            let status = document.createElement!("span").object!
+            status.id = .string("\(id)-status")
+            status.className = .string("mission-choice-status")
+            let detail = document.createElement!("span").object!
+            detail.id = .string("\(id)-detail")
+            detail.className = .string("mission-choice-detail")
+            detail.textContent = .string(mission.instruction)
+            _ = button.appendChild?(title)
+            _ = button.appendChild?(status)
+            _ = button.appendChild?(detail)
+            _ = row.appendChild?(button)
+            _ = list.appendChild?(row)
+            bindClick(id) { [weak self] in
+                self?.closeDialog("dialog-missions")
+                self?.onMissionSelected?(mission)
+            }
+        }
+        bindClick("btn-mission-next") { [weak self] in
+            self?.closeDialog("dialog-mission-result")
+            self?.onMissionNextTapped?()
+        }
+        bindClick("btn-mission-retry") { [weak self] in
+            self?.closeDialog("dialog-mission-result")
+            self?.onRestartTapped?()
+        }
+        bindClick("btn-mission-home") { [weak self] in
+            self?.closeDialog("dialog-mission-result")
+            self?.onHomeTapped?()
+            self?.onMissionsTapped?()
+        }
+        let keepResultOpen = JSClosure { args in
+            _ = args.first?.object?.preventDefault?()
+            return .undefined
+        }
+        closures.append(keepResultOpen)
+        _ = byId("dialog-mission-result")?.addEventListener?("cancel", keepResultOpen)
+    }
+
+    func showMissions(storage: StorageManager) {
+        for mission in MiniMission.allCases {
+            let id = "mission-\(mission.rawValue)"
+            let unlocked = storage.isMissionUnlocked(mission)
+            let cleared = storage.missionsCleared >= mission.rawValue
+            byId(id)?.disabled = .boolean(!unlocked)
+            setText("\(id)-status", cleared ? "Cleared" : (unlocked ? "\(mission.moveLimit) swaps" : "Locked"))
+        }
+        openDialog("dialog-missions")
     }
 
     func showScreen(_ screen: String) {
@@ -102,7 +173,6 @@ final class DOMController {
         displayedSnackRun = state
         let visible = state != .idle
         byId("snack-run-panel")?.hidden = .boolean(!visible)
-        byId("run-events")?.hidden = .boolean(visible)
         switch state {
         case .idle:
             break
@@ -136,6 +206,21 @@ final class DOMController {
         }
     }
 
+    func updateMission(_ attempt: MissionAttempt?, showStory: Bool) {
+        byId("screen-game")?.dataset.mode = .string(attempt == nil ? "endless" : "mission")
+        byId("run-focus")?.hidden = .boolean(!showStory)
+        byId("mission-panel")?.hidden = .boolean(attempt == nil)
+        guard let attempt else { return }
+        let remaining = attempt.movesRemaining
+        setText("mission-title", attempt.definition.title)
+        setText("mission-moves", "\(remaining) \(remaining == 1 ? "swap" : "swaps") left")
+        if attempt.definition == .puppyPickup, attempt.puppiesHome > 0 {
+            setText("mission-task", "\(attempt.puppiesHome)/2 puppies home")
+        } else {
+            setText("mission-task", attempt.definition.instruction)
+        }
+    }
+
     func setSnackRunControlsEnabled(_ enabled: Bool) {
         for id in ["snack-run-dash", "snack-run-poke", "snack-run-skip"] {
             byId(id)?.disabled = .boolean(!enabled)
@@ -160,7 +245,11 @@ final class DOMController {
     ) {
         setText("hud-score", "\(resolver.stats.score)")
         setText("hud-best", "BEST \(max(resolver.stats.score, highScore))")
-        setText("hud-tier", "TIER \(resolver.stats.tier)")
+        if let attempt = resolver.mission {
+            setText("hud-tier", "MISSION \(attempt.definition.rawValue)")
+        } else {
+            setText("hud-tier", "TIER \(resolver.stats.tier)")
+        }
 
         let surge = resolver.currentConfig.surge
         let tierLabel: String
@@ -308,10 +397,27 @@ final class DOMController {
         openDialog("dialog-gameover")
     }
 
+    func showMissionResult(_ attempt: MissionAttempt, result: MissionResult) {
+        let won = result == .cleared
+        let next = won && attempt.definition.next != nil
+        switch result {
+        case .cleared:
+            setText("mission-result-title", next ? "Mission cleared!" : "All missions cleared!")
+            let used = attempt.definition.moveLimit - attempt.movesRemaining
+            setText("mission-result-detail", "\(attempt.definition.title) in \(used) \(used == 1 ? "swap" : "swaps").")
+        case .outOfSwaps, .noValidMoves:
+            setText("mission-result-title", result == .outOfSwaps ? "Out of swaps" : "Out of valid moves")
+            setText("mission-result-detail", attempt.definition.instruction)
+        }
+        byId("btn-mission-next")?.hidden = .boolean(!next)
+        setText("btn-mission-retry", won ? "Replay mission" : "Retry mission")
+        openDialog("dialog-mission-result")
+    }
+
     func openDialog(_ id: String) {
         if let dlg = byId(id) {
             _ = dlg.showModal?()
-            if id == "dialog-settings" { onPauseChanged?(true) }
+            if Self.pausingDialogs.contains(id) { notifyPauseState() }
         }
     }
 
@@ -319,6 +425,10 @@ final class DOMController {
         if let dlg = byId(id) {
             _ = dlg.close?()
         }
+    }
+
+    private func notifyPauseState() {
+        onPauseChanged?(Self.pausingDialogs.contains { byId($0)?.open.boolean == true })
     }
 
     private func emitSettingsChange() {

@@ -131,6 +131,7 @@ struct PersistedProgress: Codable {
     var totalFivePlusCascades: UInt64?
     var totalSnoreBubblesPopped: UInt64 = 0
     var highestTierReached: Int = 1
+    var highestMissionCleared: Int?
 
     var soundEffectsEnabled: Bool = true
     var backgroundMusicEnabled: Bool?
@@ -169,6 +170,20 @@ final class StorageManager {
 
     func isUnlocked(_ milestone: ScrapbookMilestone) -> Bool {
         milestone.total(in: data) >= milestone.firstGoal
+    }
+
+    var missionsCleared: Int {
+        min(MiniMission.allCases.count, max(0, data.highestMissionCleared ?? 0))
+    }
+
+    func isMissionUnlocked(_ mission: MiniMission) -> Bool {
+        mission.rawValue <= missionsCleared + 1
+    }
+
+    func recordMissionClear(_ mission: MiniMission) {
+        guard mission.rawValue == missionsCleared + 1 else { return }
+        data.highestMissionCleared = mission.rawValue
+        save()
     }
 
     func progress(for milestone: ScrapbookMilestone) -> MilestoneProgress {

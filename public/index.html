@@ -55,7 +55,8 @@
 
     <footer class="home-actions">
       <p id="boot-error" role="status" hidden>Munchies couldn’t load. Reload to try again.</p>
-      <button type="button" id="btn-play" class="btn-primary" disabled>▶ Play Endless Run</button>
+      <button type="button" id="btn-missions" class="btn-primary" disabled>Play Missions</button>
+      <button type="button" id="btn-play" class="btn-secondary" disabled>▶ Play Endless Run</button>
       <button type="button" id="btn-scrapbook" class="btn-secondary" disabled>
         <span>📸 Couple's Scrapbook</span>
         <span id="home-scrapbook-count" class="pill-count">0 tiers</span>
@@ -123,25 +124,9 @@
       </div>
     </header>
 
-    <!-- 8x9 HiDPI Canvas -->
-    <section id="board-stage" class="board-stage">
-      <canvas id="board-canvas" aria-label="Munchies 8 by 9 Match-3 Game Board" aria-busy="false"></canvas>
-    </section>
-
-    <section id="run-events" class="event-strip" aria-label="Run events">
-      <div class="event-strip-side">
-        <button type="button" id="event-latest" class="event-latest" aria-label="Show latest event" hidden>
-          Latest <span aria-hidden="true">→</span>
-        </button>
-        <span class="event-strip-label" aria-hidden="true">
-          Run events <span class="event-strip-arrows">↔</span>
-        </span>
-      </div>
-      <div id="event-viewport" class="event-viewport" tabindex="0" role="group" aria-label="Event history">
-        <p id="event-empty" class="event-empty">Run events will appear here.</p>
-        <ol id="event-history" class="event-history" role="list"></ol>
-      </div>
-      <span id="event-status" class="event-status" role="status" aria-atomic="true"></span>
+    <section id="run-focus" class="run-focus" aria-label="Run story">
+      <div id="run-moment" role="status" aria-atomic="true"></div>
+      <button type="button" id="btn-run-journal" class="journal-button" aria-haspopup="dialog">Journal</button>
     </section>
     <section id="snack-run-panel" class="snack-run-panel" aria-label="Snack Runs" hidden>
       <div id="snack-run-choices" class="snack-run-choices" hidden>
@@ -161,6 +146,18 @@
         <span id="snack-run-reward"></span>
       </div>
       <button type="button" id="snack-run-skip" class="snack-run-skip">Skip</button>
+    </section>
+    <section id="mission-panel" class="mission-panel" aria-label="Mission objective" hidden>
+      <div class="mission-copy" role="status" aria-atomic="true">
+        <strong id="mission-title"></strong>
+        <span id="mission-moves"></span>
+        <span id="mission-task"></span>
+      </div>
+    </section>
+
+    <!-- 8x9 HiDPI Canvas -->
+    <section id="board-stage" class="board-stage">
+      <canvas id="board-canvas" aria-label="Munchies 8 by 9 Match-3 Game Board" aria-busy="false"></canvas>
     </section>
 
     <!-- Bottom Safe Area (~110px thumb-rest zone above iOS Home Indicator) -->
@@ -190,6 +187,39 @@
       </button>
     </footer>
   </main>
+
+  <dialog id="dialog-missions" closedby="any" aria-labelledby="missions-title">
+    <div class="dialog-head">
+      <h1 id="missions-title">Missions</h1>
+      <form method="dialog">
+        <button type="submit" class="dialog-close" aria-label="Close missions" autofocus>Done</button>
+      </form>
+    </div>
+    <ol id="mission-list" class="mission-list" role="list"></ol>
+  </dialog>
+
+  <dialog id="dialog-mission-result" closedby="none" aria-labelledby="mission-result-title">
+    <div class="gameover-content">
+      <h1 id="mission-result-title"></h1>
+      <p id="mission-result-detail"></p>
+    </div>
+    <div class="settings-actions mission-result-actions">
+      <button type="button" id="btn-mission-next" class="btn-primary" hidden>Next mission</button>
+      <button type="button" id="btn-mission-retry" class="btn-secondary">Retry mission</button>
+      <button type="button" id="btn-mission-home" class="btn-secondary">Missions</button>
+    </div>
+  </dialog>
+
+  <dialog id="dialog-run-journal" closedby="any" aria-labelledby="journal-title">
+    <div class="dialog-head">
+      <h1 id="journal-title">Run Journal</h1>
+      <form method="dialog">
+        <button type="submit" class="dialog-close" aria-label="Close journal" autofocus>Done</button>
+      </form>
+    </div>
+    <p id="journal-empty">No moments yet.</p>
+    <ol id="run-journal" class="journal-list" role="list"></ol>
+  </dialog>
 
   <!-- SETTINGS / PAUSE MODAL (Native <dialog> with light-dismiss) -->
   <dialog id="dialog-settings" closedby="any" aria-labelledby="settings-title">

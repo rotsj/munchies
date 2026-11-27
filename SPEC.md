@@ -122,7 +122,19 @@ Each track always shows its next tier. Tier `n` asks for `n` times the first goa
 - Accepting a challenge gives the player up to **six successful swaps** to complete it. Failed attempts, time spent, and emergency shuffles do not use that allowance. The player can leave a challenge early. Skipping, leaving, and expiring carry no penalty. The next offer follows the same swap schedule.
 - **Biltema Dash.** Clear the three cells marked with receipts. Matches and blasts collect receipts from the cells they clear. The markers stay on those cells until collected, including through gravity and shuffles. The reward is a horizontal **Korv Rocket**.
 - **Partille Poke Order.** Match the displayed first ingredient, then match Partille Poke on a later successful swap. The order favors Hermanos Taco when a route is available. Each swap advances at most one ingredient, including through cascades. Blast damage alone does not count as a match. The reward is a **Fiesta Bomb**.
-- An accepted Snack Run uses the run event area to show its goal and swaps left. Completion places one reward on an ordinary, unlocked snack, favoring a tile that can take part in a match. If no tile is eligible, placement waits for a later successful swap. Normal scoring and tier progression continue throughout. Ending the game clears the Snack Run.
+- An accepted Snack Run shows its goal and swaps left above the board. Completion places one reward on an ordinary, unlocked snack, favoring a tile that can take part in a match. If no tile is eligible, placement waits for a later successful swap. Normal scoring and tier progression continue throughout. Ending the game clears the Snack Run.
+
+### F. Missions
+
+**Play Missions** opens three fixed puzzles. Each goal must be met within its swap budget to clear the puzzle and unlock the next one. A cleared puzzle can be replayed. Retrying restores the starting layout and refill seed. The current goal and remaining swaps stay visible above the board.
+
+| Mission | Swaps | Goal |
+| --- | ---: | --- |
+| Puppy Pickup | 5 | Guide both starting puppies to the bottom row. |
+| Biltema Delivery | 6 | Create a Korv Rocket and hit the flagged counter with a rocket blast. |
+| Couch Co-op | 7 | Make a Fiesta Bomb and swap it with a Korv Rocket to trigger their combination. The board starts with one rocket. |
+
+Only successful swaps spend the budget. An objective completed on the final swap clears the mission. Exhausting the budget or running out of legal swaps ends the attempt. The puzzles use the same matching, gravity, rescue, and power-up rules as Endless, with fixed starting pieces, zero emergency shuffles, and no new snores, puppies, tier advances, or Snack Run offers. Mission clears save locally. Endless scores and scrapbook progress come from Endless runs.
 
 ---
 
@@ -175,7 +187,7 @@ HTML Meta & CSS:
 
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 
-The page uses `height: 100dvh`, `overflow: hidden`, and disabled text selection. The board disables browser touch gestures for swaps, while the event history accepts horizontal panning.
+The page uses `height: 100dvh`, `overflow: hidden`, and disabled text selection. The board disables browser touch gestures for swaps. The Run Journal scrolls vertically inside its dialog.
 
 Safe-Area Layout Zones:
 
@@ -183,7 +195,7 @@ Top Safe Area (padding-top: env(safe-area-inset-top)): Clears the Dynamic Island
 
 Center Stage: A Retina-scaled HTML5 canvas shows the 8 × 9 grid on a solid neutral surface with subtle grid lines. Each snack is recognized by its own silhouette and dominant color.
 
-Run Events: A horizontally scrollable strip between the board and the thumb dock keeps recent run events available for review. Cards stay in view for at least three seconds during automatic playback. Walking puppies, a car arriving at Biltema, and other illustrations accompany their event text. Point and combo callouts appear on the board. The strip follows the system's reduced-motion setting.
+Run Story pins one illustrated headline above the board. Automatic story changes are at least six successful swaps apart. The selected moment stays in place until the next one, and opening the Run Journal pauses play for reading. The journal keeps the full text of up to 24 recent moments and records Teido's first snore once per run. Snack Run results appear when resolved. Point and combo callouts appear on the board. Story animations follow the system's reduced-motion setting.
 
 * **Cupcake's 60% Rule** appears the first time Tier 1 progress reaches or passes 60%, including a turn that advances past Tier 1. A study notebook opens beside her work laptop.
 * **Gemini Mode** appears the first time a single turn matches both Cupcakes and Big Macs, including matches in different waves of that turn. The two snacks trade places in the card.

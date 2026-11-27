@@ -196,7 +196,7 @@ function findSwap(board, { valid = true, preferredKind, axis, longest = false } 
   throw new Error('No canvas cells form the requested swap');
 }
 
-async function openGame(page, { manualFrames = false } = {}) {
+async function openTitleScreen(page, { manualFrames = false } = {}) {
   if (manualFrames) await controlAnimationFrames(page, { fromStartup: true });
   await page.goto('/');
   if (manualFrames) {
@@ -204,6 +204,10 @@ async function openGame(page, { manualFrames = false } = {}) {
       message: 'All tile sprites are rasterized before starting the run',
     }).toBe(8);
   }
+}
+
+async function openGame(page, options = {}) {
+  await openTitleScreen(page, options);
   await page.getByRole('button', { name: 'Play Endless Run' }).tap();
   await expect(page.locator('#screen-game')).toBeVisible();
 }
@@ -260,12 +264,16 @@ async function advanceAnimationUntil(locator, attribute, value) {
   expect(actual, `${attribute} after advancing up to 200 animation frames`).toBe(value);
 }
 
-async function playTurn(page, positions) {
-  const canvas = page.locator('#board-canvas');
+async function tapSwap(page, positions) {
   const board = await frame(page);
   const [a, b] = await canvasPoints(page, positions.map(([row, col]) => board[row][col]));
   await page.touchscreen.tap(a.x, a.y);
   await page.touchscreen.tap(b.x, b.y);
+}
+
+async function playTurn(page, positions) {
+  const canvas = page.locator('#board-canvas');
+  await tapSwap(page, positions);
   await expect(canvas).toHaveAttribute('aria-busy', 'true');
   await advanceAnimationUntil(canvas, 'aria-busy', 'false');
 }
@@ -309,7 +317,7 @@ test('SwiftWasm boots with no external requests and draws an 8 by 9 Retina board
 
   const layout = async () => page.evaluate(() => {
     const canvas = document.querySelector('#board-canvas');
-    const log = document.querySelector('#event-viewport');
+    const story = document.querySelector('#run-focus');
     const cs = getComputedStyle(document.body);
     return {
       height: innerHeight,
@@ -317,7 +325,7 @@ test('SwiftWasm boots with no external requests and draws an 8 by 9 Retina board
       screenHeight: document.querySelector('#screen-game').getBoundingClientRect().height,
       canvas: canvas.getBoundingClientRect().toJSON(), backing: [canvas.width, canvas.height],
       hud: document.querySelector('.hud-header').getBoundingClientRect().toJSON(),
-      events: log.getBoundingClientRect().toJSON(), eventTouch: getComputedStyle(log).touchAction,
+      story: story.getBoundingClientRect().toJSON(),
       footer: document.querySelector('.thumb-dock').getBoundingClientRect().toJSON(),
       overflow: cs.overflow, boardTouch: getComputedStyle(canvas).touchAction, selection: cs.userSelect,
       ratio: devicePixelRatio, scroll: [scrollX, scrollY],
@@ -329,14 +337,14 @@ test('SwiftWasm boots with no external requests and draws an 8 by 9 Retina board
       await page.setViewportSize({ width: size.width, height: size.height - heightReduction });
     }
     await expect.poll(async () => {
-      const { height, paddingBottom, screenHeight, canvas, backing, hud, events, eventTouch, footer, overflow, boardTouch, selection, ratio, scroll } = await layout();
+      const { height, paddingBottom, screenHeight, canvas, backing, hud, story, footer, overflow, boardTouch, selection, ratio, scroll } = await layout();
       const cellSize = Math.floor(Math.min((canvas.width - 20) / 8, (canvas.height - 20) / 9));
       return screenHeight === height && parseFloat(paddingBottom) >= 24
-        && hud.bottom <= canvas.top + 1 && canvas.bottom <= events.top + 1
-        && events.bottom <= footer.top + 1 && footer.bottom <= height - 23
+        && hud.bottom <= story.top + 1 && story.bottom <= canvas.top + 1
+        && canvas.bottom <= footer.top + 1 && footer.bottom <= height - 23
         && cellSize >= (heightReduction ? 32 : 42)
         && Math.abs(backing[0] - canvas.width * ratio) < 1.1 && Math.abs(backing[1] - canvas.height * ratio) < 1.1
-        && overflow === 'hidden' && boardTouch === 'none' && eventTouch === 'pan-x'
+        && overflow === 'hidden' && boardTouch === 'none'
         && selection === 'none' && scroll.every(n => n === 0);
     }).toBe(true);
   }
@@ -643,92 +651,82 @@ test('shuffle is spent once, keeps score, and restart restores the opening HUD',
   await expect(page.locator('#hud-score')).toHaveText('0');
 });
 
-test('run events hold their place, illustrate a puppy and Biltema trip, and let players browse', async ({ page }) => {
+test('run moments stay pinned above the board and keep other stories in a journal', async ({ page }) => {
   // Seed 2 produces a puppy on the first swap and a Tier 2 Korv Dash on the second.
+  await page.setViewportSize({ width: 320, height: 600 });
   await page.clock.install({ time: 0 });
   await instrument(page, { gameSeed: 2 });
-  await openGame(page);
-  await frame(page);
-  await controlAnimationFrames(page);
-  await page.clock.pauseAt(60_000);
+  await openGame(page, { manualFrames: true });
 
-  const canvas = page.locator('#board-canvas');
-  const panel = page.getByRole('region', { name: 'Run events' });
-  const viewport = panel.getByRole('group', { name: 'Event history' });
-  const cards = panel.getByRole('listitem');
-  const current = panel.locator('.is-current');
-  await expect(panel.getByText('Run events will appear here.')).toBeVisible();
+  const story = page.getByRole('region', { name: 'Run story' });
+  const moment = story.getByRole('status');
+  const journalButton = story.getByRole('button', { name: 'Journal' });
+  await expect(journalButton).toBeVisible();
+  await expect(moment).toBeEmpty();
 
-  for (const positions of [[[7, 4], [8, 4]], [[2, 0], [3, 0]]]) await playTurn(page, positions);
-
-  const puppy = cards.filter({ hasText: 'Stray puppy spotted' });
-  const trip = cards.filter({ hasText: 'Pre-17:00 Korv Dash!' });
-  await expect(puppy).toHaveCount(1);
-  await expect(trip).toHaveCount(1);
-
-  const cardCount = await cards.count();
-  const seen = new Set();
-  for (let i = 0; i < cardCount; i++) {
-    await expect(current).toHaveText(await cards.nth(i).textContent());
-    const art = await current.getAttribute('data-art');
-    if (art === 'puppy') {
-      await expect(current.locator('.event-travel')).toHaveCSS('animation-name', 'event-walk-in');
-      await expect(current.locator('.event-sprite')).toHaveCSS('animation-name', 'event-puppy-gait');
-    }
-    if (art === 'biltema') {
-      await expect(current.locator('.event-travel')).toHaveCSS('animation-name', 'event-drive-in');
-      await expect(current.locator('.event-art')).toHaveCSS('background-image', /event-biltema-store\.svg/);
-    }
-    seen.add(art);
-    if (i < cardCount - 1) {
-      await page.clock.fastForward(2_999);
-      await expect(current).toHaveText(await cards.nth(i).textContent());
-      await page.clock.fastForward(1);
-    }
-  }
-  expect([...seen]).toEqual(expect.arrayContaining(['puppy', 'biltema']));
+  await playTurn(page, [[7, 4], [8, 4]]);
+  await expect(moment).toHaveText('Stray puppy spotted');
+  expect(await moment.locator('.event-title').evaluate(title => {
+    const card = title.closest('.event-card').getBoundingClientRect();
+    const text = title.getBoundingClientRect();
+    return text.top >= card.top && text.bottom <= card.bottom;
+  })).toBeTruthy();
+  expect(await page.locator('.thumb-dock').evaluate(dock => dock.scrollWidth <= dock.clientWidth)).toBeTruthy();
+  await expect(moment.locator('.event-travel')).toHaveCSS('animation-name', 'event-walk-in');
+  await expect(moment.locator('.event-sprite')).toHaveCSS('animation-name', 'event-puppy-gait');
+  await playTurn(page, [[2, 0], [3, 0]]);
+  await expect(moment).toContainText('Stray puppy spotted');
+  await page.clock.fastForward(60_000);
+  await expect(moment).toContainText('Stray puppy spotted');
 
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await expect(current.locator('.event-travel')).toHaveCSS('animation-name', 'none');
-  await expect(current.locator('.event-sprite')).toHaveCSS('animation-name', 'none');
-  const rightmost = await current.evaluate(el => el.offsetLeft);
-  const prior = await cards.nth(cardCount - 2).evaluate(el => el.offsetLeft);
-  const scrollPosition = () => viewport.evaluate(el => el.scrollLeft);
-  await expect.poll(scrollPosition).toBeCloseTo(rightmost, 0);
-  await viewport.press('ArrowLeft');
-  const latest = panel.getByRole('button', { name: 'Show latest event' });
-  await expect(latest).toBeVisible();
-  await expect.poll(scrollPosition).toBeCloseTo(prior, 0);
-  await page.getByRole('button', { name: /SHUFFLE/ }).tap();
+  await expect(moment.locator('.event-travel')).toHaveCSS('animation-name', 'none');
+  const canvas = page.locator('#board-canvas');
+  await tapSwap(page, [[5, 3], [6, 3]]);
+  await expect(canvas).toHaveAttribute('aria-busy', 'true');
+  await journalButton.tap();
+  const journal = page.getByRole('dialog', { name: 'Run Journal' });
+  const trip = journal.getByRole('listitem').filter({ hasText: 'Pre-17:00 Korv Dash!' });
+  await expect(trip).toBeVisible();
+  await expect(trip.locator('.event-art')).toHaveCSS('background-image', /event-biltema-store\.svg/);
+  await expect(journal.getByText('Guide it to the bottom row.')).toBeVisible();
+  await page.evaluate(() => window.munchiesProbe.advanceFrames(120));
+  await expect(canvas).toHaveAttribute('aria-busy', 'true');
+  await journal.evaluate(dialog => {
+    window.munchiesProbe.journalClosed = false;
+    dialog.addEventListener('close', () => { window.munchiesProbe.journalClosed = true; }, { once: true });
+  });
+  await journal.getByRole('button', { name: 'Close journal' }).tap();
+  await expect(journal).toBeHidden();
+  await expect.poll(() => page.evaluate(() => window.munchiesProbe.journalClosed)).toBe(true);
   await advanceAnimationUntil(canvas, 'aria-busy', 'false');
-  await expect(cards.last()).toContainText('Korv Shuffle');
-  await page.clock.fastForward(6_000);
-  await expect.poll(scrollPosition).toBeCloseTo(prior, 0);
-  await latest.tap();
-  await expect(latest).toBeHidden();
-  await expect(current).toContainText('Korv Shuffle');
-  await expect.poll(scrollPosition).toBeCloseTo(await current.evaluate(el => el.offsetLeft), 0);
+  await expect(moment).toContainText('Stray puppy spotted');
+
+  for (const swap of [
+    [[7, 3], [8, 3]], [[0, 1], [1, 1]], [[0, 1], [0, 2]], [[1, 2], [2, 2]], [[2, 2], [2, 3]], [[1, 2], [2, 2]],
+  ]) {
+    await playTurn(page, swap);
+    await expect(moment).toContainText('Stray puppy spotted');
+  }
+  // A later surge gets the focus. The older Biltema story stays in the journal.
+  await playTurn(page, [[2, 0], [2, 1]]);
+  await expect(page.locator('#run-moment')).toContainText("Cupcake's Big Mac & Puppy Surge!");
 
   await page.getByRole('button', { name: 'Pause' }).tap();
   await page.getByRole('button', { name: /Restart Run/ }).tap();
-  await expect(cards).toHaveCount(0);
-  await expect(panel.getByText('Run events will appear here.')).toBeVisible();
+  await expect(moment).toBeEmpty();
+  await journalButton.tap();
+  await expect(journal.getByText('No moments yet.')).toBeVisible();
 });
 
 test('Cupcake and PS5 scenes follow their triggers once per run, with the couch returning for the surge', async ({ page }) => {
-  await page.clock.install({ time: 0 });
   await instrument(page, { gameSeed: 6 });
-  await openGame(page);
-  await frame(page);
-  await controlAnimationFrames(page);
-  await page.clock.pauseAt(60_000);
+  await openGame(page, { manualFrames: true });
 
-  const panel = page.getByRole('region', { name: 'Run events' });
-  const cards = panel.getByRole('listitem');
+  const cards = page.locator('#run-journal li');
   const schedule = cards.filter({ hasText: "Cupcake's 60% Rule" });
   const gemini = cards.filter({ hasText: 'Gemini Mode' });
   const couch = cards.filter({ hasText: 'PS5 Couch Mode' });
-  const current = panel.locator('.is-current');
 
   // Cupcakes and Big Macs matched on separate turns do not qualify for Gemini Mode.
   const opening = [
@@ -754,26 +752,9 @@ test('Cupcake and PS5 scenes follow their triggers once per run, with the couch 
   await expect(gemini).toHaveCount(1);
   await expect(couch).toHaveCount(1);
 
-  const scenes = new Map([
-    ['schedule', { image: /event-cupcake-schedule\.svg/, animation: 'event-scene-reveal' }],
-    ['gemini', { image: /tile-cupcake\.svg.*tile-bigMac\.svg/, animation: 'event-gemini-swap' }],
-    ['couch', { image: /event-ps5-couch\.svg/, animation: 'event-scene-reveal' }],
-  ]);
-  const cardCount = await cards.count();
-  for (let i = 0; i < cardCount && scenes.size; i++) {
-    const art = await current.getAttribute('data-art');
-    const scene = scenes.get(art);
-    if (scene) {
-      const sprite = current.locator('.event-sprite');
-      await expect(sprite).toHaveCSS('background-image', scene.image);
-      await expect(sprite).toHaveCSS('animation-name', scene.animation);
-      scenes.delete(art);
-    }
-    if (scenes.size && i + 1 < cardCount) await page.clock.fastForward(3_000);
-  }
-  expect([...scenes.keys()]).toEqual([]);
-  await page.emulateMedia({ reducedMotion: 'reduce' });
-  await expect(current.locator('.event-sprite')).toHaveCSS('animation-name', 'none');
+  await expect(schedule.locator('.event-sprite')).toHaveCSS('background-image', /event-cupcake-schedule\.svg/);
+  await expect(gemini.locator('.event-sprite')).toHaveCSS('background-image', /tile-cupcake\.svg.*tile-bigMac\.svg/);
+  await expect(couch.locator('.event-sprite')).toHaveCSS('background-image', /event-ps5-couch\.svg/);
 
   // Continue the same run to Teido's regular tier-six surge and its existing 3× rocket reward.
   for (const positions of [
@@ -803,7 +784,7 @@ const snackRunOpening = [
 async function playToSnackRunOffer(page) {
   const canvas = page.locator('#board-canvas');
   const panel = page.getByRole('region', { name: 'Snack Runs' });
-  const events = page.getByRole('region', { name: 'Run events' });
+  const events = page.getByRole('region', { name: 'Run story' });
   for (const positions of snackRunOpening.slice(0, 9)) {
     await playTurn(page, positions);
     await expect(panel).toBeHidden();
@@ -858,9 +839,9 @@ for (const run of [
     await playTurn(page, run.second);
     await expect(panel).toBeHidden();
     await expect(events).toBeVisible();
-    const result = events.locator('.event-card.is-current');
+    const result = events.locator('.event-card');
     await expect(result).toContainText(`${run.title} complete!`);
-    await expect(result).toContainText(`${run.reward} added to the board.`);
+    await expect(result).toContainText(`${run.reward} earned`);
     await expect(result).toHaveAttribute('data-art', run.art);
     const [row, col] = run.at;
     expect((await frame(page))[row][col].special).toBe(run.icon);
@@ -915,6 +896,76 @@ test('Snack Runs fit a compact screen and can be skipped or left', async ({ page
   await expect(events).toBeVisible();
   await expect(score).toHaveText(beforeSkip);
   expect(await page.evaluate(() => window.munchiesProbe.receipts)).toBe(0);
+});
+
+test('clearing mission goals unlocks the route, and retries use the same board', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 600 });
+  await instrument(page, { progress: { ...emptyProgress, highScore: 4_321, totalPuppiesRescued: 3 } });
+  await openTitleScreen(page, { manualFrames: true });
+
+  const start = page.getByRole('button', { name: 'Play Missions' });
+  const menu = page.getByRole('dialog', { name: 'Missions', exact: true });
+  const objective = page.getByRole('region', { name: 'Mission objective' });
+  const result = page.locator('#dialog-mission-result');
+  const next = result.getByRole('button', { name: 'Next mission' });
+  await start.tap();
+  await expect(menu.getByRole('button', { name: 'Biltema Delivery' })).toBeDisabled();
+  await expect(menu.getByRole('button', { name: 'Couch Co-op' })).toBeDisabled();
+  await menu.getByRole('button', { name: 'Puppy Pickup' }).tap();
+  await expect(objective).toContainText('Guide both puppies to the bottom row.');
+  await expect(objective).toContainText('5 swaps left');
+  const opening = (await frame(page)).flat().map(tile => tile.kind);
+  expect(opening.filter(kind => kind === 'puppy')).toHaveLength(2);
+  await expect(page.getByRole('region', { name: 'Run story' })).toBeHidden();
+  const objectiveBox = await objective.boundingBox();
+  const boardBox = await page.locator('#board-canvas').boundingBox();
+  expect(objectiveBox.y + objectiveBox.height).toBeLessThanOrEqual(boardBox.y);
+
+  // Five high-scoring swaps without the second puppy do not unlock the next board.
+  for (const swap of [
+    [[4, 0], [4, 1]], [[1, 4], [1, 5]], [[2, 3], [2, 4]], [[7, 3], [8, 3]], [[7, 2], [8, 2]],
+  ]) await playTurn(page, swap);
+  await expect(result).toContainText('Out of swaps');
+  await expect(next).toBeHidden();
+  expect((await readProgress(page)).highestMissionCleared).toBeUndefined();
+
+  await result.getByRole('button', { name: 'Retry mission' }).tap();
+  await expect(objective).toContainText('5 swaps left');
+  expect((await frame(page)).flat().map(tile => tile.kind)).toEqual(opening);
+  for (const swap of [
+    [[6, 0], [7, 0]], [[3, 5], [3, 6]], [[5, 0], [5, 1]], [[7, 1], [8, 1]],
+  ]) await playTurn(page, swap);
+  await expect(result).toContainText('Puppy Pickup in 4 swaps.');
+  expect((await readProgress(page)).highestMissionCleared).toBe(1);
+
+  await next.tap();
+  await expect(objective).toContainText('Biltema Delivery');
+  await expect(objective).toContainText('6 swaps left');
+  await expect(page.locator('#board-canvas')).toHaveAttribute('aria-description', 'Biltema counter. Row 5, column 8.');
+  for (const swap of [[[7, 5], [7, 6]], [[1, 5], [2, 5]], [[8, 6], [8, 7]]]) await playTurn(page, swap);
+  await expect(result).toContainText('Biltema Delivery in 3 swaps.');
+
+  await next.tap();
+  await expect(objective).toContainText('Couch Co-op');
+  await expect(objective).toContainText('7 swaps left');
+  await expect(page.locator('#board-canvas')).not.toHaveAttribute('aria-description', /Biltema counter/);
+  for (const swap of [
+    [[7, 1], [7, 2]], [[5, 2], [6, 2]], [[4, 2], [5, 2]], [[4, 2], [4, 3]],
+  ]) await playTurn(page, swap);
+  await expect(result).toContainText('All missions cleared!');
+  await expect(next).toBeHidden();
+  const progress = await readProgress(page);
+  expect(progress).toMatchObject({ highestMissionCleared: 3, highScore: 4_321, totalPuppiesRescued: 3 });
+
+  await result.getByRole('button', { name: 'Missions', exact: true }).tap();
+  await expect(menu.getByText('Cleared', { exact: true })).toHaveCount(3);
+  await page.reload();
+  await start.tap();
+  await expect(menu.getByText('Cleared', { exact: true })).toHaveCount(3);
+  await menu.getByRole('button', { name: 'Close missions' }).tap();
+  await page.getByRole('button', { name: 'Play Endless Run' }).tap();
+  await expect(page.getByRole('region', { name: 'Run story' })).toBeVisible();
+  await expect(objective).toBeHidden();
 });
 
 test('making progress and leaving a run saves cumulative score and earns a Polaroid exactly once', async ({ page }) => {
@@ -1087,4 +1138,12 @@ test('service worker pre-caches executable, glue and sprites and supports cold o
   await offlinePage.touchscreen.tap(a.x, a.y);
   await offlinePage.touchscreen.tap(b.x, b.y);
   await expect(offlinePage.locator('#hud-score')).not.toHaveText('0');
+
+  await offlinePage.reload();
+  await offlinePage.getByRole('button', { name: 'Play Missions' }).tap();
+  await offlinePage.getByRole('button', { name: 'Puppy Pickup' }).tap();
+  const objective = offlinePage.getByRole('region', { name: 'Mission objective' });
+  await expect(objective).toContainText('5 swaps left');
+  await tapSwap(offlinePage, [[6, 0], [7, 0]]);
+  await expect(objective).toContainText('4 swaps left');
 });

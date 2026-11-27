@@ -8,12 +8,23 @@ public struct CascadeResolver: Sendable {
     public var isGameOver: Bool
     public var gameOverReason: GameOverReason?
     public private(set) var snackRun: SnackRunState = .idle
+    public private(set) var mission: MissionAttempt?
     private var pendingSnackRunReward: SnackRunKind?
 
     public init(seed: UInt64 = 42, startingTier: Int = 1) {
         var initialBoard = BoardState(seed: seed)
         TileSpawner.populateInitialBoard(board: &initialBoard, tier: startingTier)
-        self.board = initialBoard
+        self.init(board: initialBoard, startingTier: startingTier)
+    }
+
+    public init(mission: MiniMission) {
+        self.init(board: mission.makeBoard(), startingTier: 1)
+        self.mission = MissionAttempt(mission)
+        stats.availableShuffles = 0
+    }
+
+    private init(board: BoardState, startingTier: Int) {
+        self.board = board
         var initialStats = RunStats()
         initialStats.tier = max(1, startingTier)
         self.stats = initialStats
@@ -41,7 +52,14 @@ public struct CascadeResolver: Sendable {
     public mutating func performSwap(from a: GridPos, to b: GridPos) -> [BoardStep] {
         let previousMoves = stats.movesMade
         var steps = resolveSwap(from: a, to: b)
-        guard stats.movesMade > previousMoves, !isGameOver else { return steps }
+        guard stats.movesMade > previousMoves else { return steps }
+        if var attempt = mission {
+            attempt.finishTurn(steps, deadlocked: isGameOver)
+            mission = attempt
+            isGameOver = attempt.result != nil
+            return steps
+        }
+        guard !isGameOver else { return steps }
 
         if case .active(var run) = snackRun {
             run.apply(SnackRunTurn(steps: steps))
@@ -135,7 +153,7 @@ public struct CascadeResolver: Sendable {
                     endRun(.snoreOverload, steps: &steps)
                     return steps
                 }
-                if totalTilesClearedThisTurn > progressApplied {
+                if mission == nil && totalTilesClearedThisTurn > progressApplied {
                     puppyIntervalCrossed = puppyIntervalCrossed || reachedPuppyScoreThreshold
                     advanceTierProgress(tilesCleared: totalTilesClearedThisTurn - progressApplied, steps: &steps)
                     progressApplied = totalTilesClearedThisTurn
@@ -172,7 +190,7 @@ public struct CascadeResolver: Sendable {
             lastSpawns = applyGravityAndRefill(cascadeDepth: cascadeDepth, steps: &steps)
         }
         stats.maxCascadeReached = max(stats.maxCascadeReached, cascadeDepth)
-        advanceSnoreMeter(cascadeDepth: cascadeDepth, steps: &steps)
+        if mission == nil { advanceSnoreMeter(cascadeDepth: cascadeDepth, steps: &steps) }
         if board.activeSnoreCount >= DifficultyConfig.snoreLoseThreshold {
             steps.append(.avatarReaction(.cupcakeSnoreAlert))
             endRun(.snoreOverload, steps: &steps)
@@ -188,7 +206,9 @@ public struct CascadeResolver: Sendable {
             steps.append(.avatarReaction(.teidoComboWakeUp(cascadeDepth: cascadeDepth)))
         }
 
-        checkAndSpawnPuppy(maxCascadeDepth: cascadeDepth, intervalCrossed: puppyIntervalCrossed, steps: &steps)
+        if mission == nil {
+            checkAndSpawnPuppy(maxCascadeDepth: cascadeDepth, intervalCrossed: puppyIntervalCrossed, steps: &steps)
+        }
 
         if board.activeSnoreCount >= 5 {
             steps.append(.avatarReaction(.cupcakeSnoreAlert))
@@ -214,7 +234,7 @@ public struct CascadeResolver: Sendable {
     }
 
     public mutating func triggerEmergencyShuffle() -> [BoardStep] {
-        guard !isGameOver, stats.availableShuffles > 0 else { return [] }
+        guard mission == nil, !isGameOver, stats.availableShuffles > 0 else { return [] }
         let moves = MoveValidator.shuffleBoard(&board)
         if moves.isEmpty && !MoveValidator.findAllValidMoves(in: board).isEmpty { return [] }
         if case .offered = snackRun { snackRun = .idle }

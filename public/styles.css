@@ -245,7 +245,7 @@ html, body {
 
 /* GAMEPLAY HUD */
 .screen-game {
-  --event-height: 74px;
+  --focus-height: 74px;
   gap: 8px;
 }
 
@@ -508,15 +508,106 @@ html, body {
   touch-action: none;
 }
 
-.event-strip {
+.run-focus,
+.mission-panel {
   display: grid;
-  grid-template-columns: 68px minmax(0, 1fr);
+  align-items: stretch;
   flex: none;
-  min-block-size: var(--event-height);
-  border: 1px solid var(--glass-border);
+  block-size: calc(var(--focus-height) + 2px);
+  border: 1px solid #5b4e6d;
   border-radius: var(--radius-md);
-  background: #201d31;
+  background: #262136;
+}
+
+.run-focus {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 5px;
+  padding-inline-end: 5px;
   overflow: hidden;
+}
+
+#run-moment { min-width: 0; }
+#run-moment .event-card { height: 100%; }
+
+.journal-button {
+  align-self: center;
+  min-height: 44px;
+  min-width: 56px;
+  padding: 0 8px;
+  border: 1px solid #655473;
+  border-radius: 9px;
+  background: #332942;
+  color: #f1dff5;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.journal-button:hover { background: #493b59; }
+
+.journal-list,
+.mission-list {
+  display: grid;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  gap: 8px;
+}
+
+.journal-list .event-card {
+  min-height: 68px;
+  border-radius: 10px;
+}
+
+#journal-empty { margin: 0; color: #e3dce8; }
+
+.mission-panel {
+  padding: 6px 12px;
+  border-color: #826d47;
+  background: #342a39;
+}
+
+.mission-copy {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-content: center;
+  align-items: baseline;
+  column-gap: 10px;
+  row-gap: 3px;
+  line-height: 1.2;
+}
+
+#mission-title { color: #ffdfab; font-size: 17px; }
+#mission-moves { color: #ffdfab; font-size: 14px; font-weight: 750; white-space: nowrap; }
+#mission-task { grid-column: 1 / -1; font-size: 14px; color: #faf1f7; }
+
+.mission-choice {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  width: 100%;
+  min-height: 60px;
+  padding: 10px 12px;
+  gap: 5px 10px;
+  border: 1px solid #655473;
+  border-radius: 12px;
+  background: #39304b;
+  color: #fff0fa;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.mission-choice:disabled { opacity: 0.66; cursor: default; }
+.mission-choice:hover:enabled { background: #463853; }
+.mission-choice-status { color: #ffdfab; font-size: 14px; }
+.mission-choice-detail { grid-column: 1 / -1; color: #e4dbe8; font-size: 14px; }
+.mission-result-actions button[hidden] { display: none; }
+#mission-result-detail { margin: 4px 0 14px; }
+
+.screen-game[data-mode="mission"] :is(.meters-row, #hud-score, #hud-best, .thumb-dock) {
+  display: none;
 }
 
 .snack-run-panel {
@@ -524,7 +615,7 @@ html, body {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: stretch;
   flex: none;
-  block-size: calc(var(--event-height) + 2px);
+  block-size: calc(var(--focus-height) + 2px);
   gap: 6px;
   padding: 5px;
   border: 1px solid #655374;
@@ -532,7 +623,8 @@ html, body {
   background: #292237;
 }
 
-.event-strip[hidden],
+.run-focus[hidden],
+.mission-panel[hidden],
 .snack-run-panel [hidden],
 .snack-run-panel[hidden] {
   display: none;
@@ -616,106 +708,26 @@ html, body {
   .snack-run-choice span { font-size: 11px; }
 }
 
-.event-strip-side {
-  display: grid;
-  place-items: stretch;
-  border-inline-end: 1px solid #433b52;
-  background: #2b263d;
-}
-
-.event-strip-label,
-.event-latest {
-  display: grid;
-  place-content: center;
-  padding: 6px;
-  border: 0;
-  color: #f9e8ff;
-  text-align: center;
-  font: inherit;
-  font-size: 14px;
-  font-weight: 800;
-  line-height: 1.1;
-}
-
-.event-strip-arrows {
-  margin-block-start: 4px;
-  color: #c5aacd;
-}
-
-.event-latest {
-  min-height: 44px;
-  background: #443657;
-  cursor: pointer;
-}
-
-.event-latest:hover { background: #59456c; }
-.event-latest[hidden],
-.event-latest:not([hidden]) + .event-strip-label,
-.event-empty[hidden] {
-  display: none;
-}
-
-.event-viewport {
-  min-width: 0;
-  height: var(--event-height);
-  overflow: auto hidden;
-  overscroll-behavior-x: contain;
-  scroll-snap-type: x mandatory;
-  scrollbar-width: thin;
-  scrollbar-color: #645571 transparent;
-  touch-action: pan-x;
-}
-
-.event-latest:focus-visible,
-.event-viewport:focus-visible {
-  outline: 2px solid #ffe09a;
-  outline-offset: -3px;
-}
-
-.event-empty {
-  display: grid;
-  align-items: center;
-  height: 100%;
-  margin: 0;
-  padding: 10px 14px;
-  color: #cdbfdc;
-  font-size: 14px;
-}
-
-.event-history {
-  position: relative;
-  display: flex;
-  height: 100%;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
 .event-card {
   --event-accent: #f2bee0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) clamp(62px, 21vw, 92px);
+  grid-template-columns: minmax(0, 1fr) clamp(52px, 18vw, 84px);
   align-items: center;
-  flex: 0 0 100%;
   gap: 6px;
   min-width: 0;
   padding: 5px 5px 5px 12px;
   background: linear-gradient(105deg, #282237, #332a42);
-  scroll-snap-align: start;
 }
 
 .event-card[data-art="biltema"],
 .event-card[data-art="teido"],
-.event-card[data-art="couch"],
-.event-card[data-art="shuffle"] { --event-accent: #a4d8ff; }
+.event-card[data-art="couch"] { --event-accent: #a4d8ff; }
 
 .event-card[data-art="snore"],
-.event-card[data-art="gemini"],
-.event-card[data-art="cleared"] { --event-accent: #dbcbff; }
+.event-card[data-art="gemini"] { --event-accent: #dbcbff; }
 
 .event-card[data-art="taco"],
-.event-card[data-art="schedule"],
-.event-card[data-art="rocket"] { --event-accent: #ffe29a; }
+.event-card[data-art="schedule"] { --event-accent: #ffe29a; }
 
 .event-card[data-art="poke"] { --event-accent: #a5efcc; }
 
@@ -805,10 +817,8 @@ html, body {
               url("./assets/tile-bigMac.svg") right center / 48% auto no-repeat;
 }
 
-.event-card[data-art="snore"] .event-sprite,
-.event-card[data-art="cleared"] .event-sprite { background-image: url("./assets/tile-teido.svg"); }
-.event-card[data-art="snore"] .event-sprite::after,
-.event-card[data-art="cleared"] .event-sprite::after {
+.event-card[data-art="snore"] .event-sprite { background-image: url("./assets/tile-teido.svg"); }
+.event-card[data-art="snore"] .event-sprite::after {
   content: "Zz";
   position: absolute;
   top: 0;
@@ -820,32 +830,26 @@ html, body {
   font-size: 14px;
   font-weight: 900;
 }
-.event-card[data-art="cleared"] .event-sprite::after { content: "✦"; }
 .event-card[data-art="cupcake"] .event-sprite { background-image: url("./assets/tile-cupcake.svg"); }
 .event-card[data-art="teido"] .event-sprite { background-image: url("./assets/teido-controller.svg"); }
-.event-card[data-art="taco"] .event-sprite,
-.event-card[data-art="burst"] .event-sprite { background-image: url("./assets/tile-hermanosTaco.svg"); }
+.event-card[data-art="taco"] .event-sprite { background-image: url("./assets/tile-hermanosTaco.svg"); }
 .event-card[data-art="poke"] .event-sprite { background-image: url("./assets/tile-partillePoke.svg"); }
-.event-card[data-art="shuffle"] .event-sprite,
-.event-card[data-art="swirl"] .event-sprite { background-image: url("./assets/tile-biltemaCombo.svg"); }
-.event-card[data-art="rocket"] .event-sprite { background-image: url("./assets/event-rocket.svg"); }
-.event-card[data-art="padThai"] .event-sprite { background-image: url("./assets/tile-padThai.svg"); }
 .event-card[data-art="snack"] .event-sprite { background-image: url("./assets/tile-bigMac.svg"); }
 
-.event-card.is-current .event-sprite { animation: event-art-in 280ms 180ms ease-out both; }
-.event-card.is-current:is([data-art="puppy"], [data-art="rescue"]) .event-travel {
+#run-moment .event-card .event-sprite { animation: event-art-in 280ms 180ms ease-out both; }
+#run-moment .event-card:is([data-art="puppy"], [data-art="rescue"]) .event-travel {
   animation: event-walk-in 1.28s 240ms ease-out both;
 }
-.event-card.is-current:is([data-art="puppy"], [data-art="rescue"]) .event-sprite {
+#run-moment .event-card:is([data-art="puppy"], [data-art="rescue"]) .event-sprite {
   animation: event-puppy-gait 320ms 240ms steps(4, end) 4;
 }
-.event-card.is-current[data-art="biltema"] .event-travel {
+#run-moment .event-card[data-art="biltema"] .event-travel {
   animation: event-drive-in 1.2s 240ms ease-out both;
 }
-.event-card.is-current:is([data-art="schedule"], [data-art="couch"]) .event-sprite {
+#run-moment .event-card:is([data-art="schedule"], [data-art="couch"]) .event-sprite {
   animation: event-scene-reveal 540ms 240ms steps(1, end) both;
 }
-.event-card.is-current[data-art="gemini"] .event-sprite {
+#run-moment .event-card[data-art="gemini"] .event-sprite {
   animation: event-gemini-swap 740ms 240ms ease-in-out both;
 }
 
@@ -872,35 +876,25 @@ html, body {
   to { background-position: left center, right center; }
 }
 
-.event-status {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .event-card.is-current .event-travel,
-  .event-card.is-current .event-sprite { animation: none !important; }
+  #run-moment .event-card .event-travel,
+  #run-moment .event-card .event-sprite { animation: none !important; }
 }
 
 @media (max-height: 680px) {
-  .screen-game { --event-height: 66px; gap: 6px; }
+  .screen-game { --focus-height: 66px; gap: 6px; }
   .screen-game .hud-header { padding: 7px 10px; gap: 5px; }
   .screen-game .avatar-ring { width: 44px; height: 44px; }
   .screen-game .avatar-face { width: 37px; height: 37px; }
   .screen-game .score-value { font-size: 24px; }
   .screen-game .thumb-dock { height: 54px; }
-  .event-strip { grid-template-columns: 60px minmax(0, 1fr); }
   .event-title { font-size: 15px; }
 }
 
 /* BOTTOM THUMB DOCK */
 .thumb-dock {
   display: grid;
-  grid-template-columns: 1fr 1fr 1.15fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.15fr);
   gap: 10px;
   height: 66px;
 }
@@ -932,6 +926,12 @@ html, body {
 .dock-icon { font-size: 21px; }
 .dock-label { font-size: 10px; font-weight: 800; color: var(--text-muted); }
 .dock-value { font-size: 17px; font-weight: 900; }
+
+@media (max-width: 360px) {
+  .thumb-dock { gap: 6px; }
+  .dock-card { gap: 4px; padding-inline: 7px; }
+  .dock-icon { font-size: 17px; }
+}
 
 /* NATIVE <dialog> MODALS */
 dialog {
@@ -976,6 +976,7 @@ dialog::backdrop {
 }
 
 .dialog-close {
+  min-height: 44px;
   border: 0;
   border-radius: 999px;
   padding: 6px 14px;

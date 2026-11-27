@@ -62,7 +62,7 @@ async function bootSwiftWasm() {
   try {
     const { init } = await import("./runtime/index.js");
     await init({ module: fetch("./munchies.wasm") });
-    for (const id of ["btn-play", "btn-home-settings", "btn-scrapbook"]) {
+    for (const id of ["btn-play", "btn-missions", "btn-home-settings", "btn-scrapbook"]) {
       document.getElementById(id).disabled = false;
     }
   } catch (err) {

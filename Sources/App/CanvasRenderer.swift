@@ -78,6 +78,7 @@ final class CanvasRenderer {
     private var beams: [BeamEffect] = []
     private var callouts: [FloatingCallout] = []
     private var snackRunReceipts: Set<GridPos> = []
+    private var deliveryCounter: GridPos?
     private var spriteCache: [String: JSObject] = [:]
     private var spriteLoaders: [JSClosure] = []
 
@@ -575,6 +576,7 @@ final class CanvasRenderer {
         drawBoardContainer()
         drawTiles()
         drawSnackRunReceipts()
+        if let deliveryCounter { drawDeliveryCounter(at: deliveryCounter) }
         drawBeams()
         drawParticles()
         drawCallouts()
@@ -582,14 +584,37 @@ final class CanvasRenderer {
         _ = ctx.restore?()
     }
 
-    func setSnackRunReceipts(_ positions: Set<GridPos>) {
-        snackRunReceipts = positions
-        if positions.isEmpty {
-            _ = canvas.removeAttribute?("aria-description")
-        } else {
-            let cells = positions.sorted().map { "Row \($0.row + 1), column \($0.col + 1)." }.joined(separator: " ")
+    func setObjectiveMarkers(receipts: Set<GridPos>, counter: GridPos?) {
+        snackRunReceipts = receipts
+        deliveryCounter = counter
+        if let counter {
+            _ = canvas.setAttribute?("aria-description", "Biltema counter. Row \(counter.row + 1), column \(counter.col + 1).")
+        } else if !receipts.isEmpty {
+            let cells = receipts.sorted().map { "Row \($0.row + 1), column \($0.col + 1)." }.joined(separator: " ")
             _ = canvas.setAttribute?("aria-description", "Biltema receipts. \(cells)")
+        } else {
+            _ = canvas.removeAttribute?("aria-description")
         }
+    }
+
+    private func drawDeliveryCounter(at position: GridPos) {
+        let (centerX, centerY) = centerPoint(for: position)
+        let x = centerX - cellSize * 0.45
+        let y = centerY - cellSize * 0.45
+        let size = cellSize * 0.38
+        drawRoundedRect(x: x, y: y, w: size, h: size, r: 3)
+        ctx.fillStyle = .string("#194b80")
+        _ = ctx.fill?()
+        ctx.strokeStyle = .string("#f9d384")
+        ctx.lineWidth = .number(1.4)
+        _ = ctx.stroke?()
+        _ = ctx.beginPath?()
+        _ = ctx.moveTo?(x + size * 0.30, y + size * 0.78)
+        _ = ctx.lineTo?(x + size * 0.30, y + size * 0.23)
+        _ = ctx.lineTo?(x + size * 0.76, y + size * 0.23)
+        _ = ctx.lineTo?(x + size * 0.65, y + size * 0.50)
+        _ = ctx.lineTo?(x + size * 0.30, y + size * 0.50)
+        _ = ctx.stroke?()
     }
 
     private func drawSnackRunReceipts() {
