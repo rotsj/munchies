@@ -783,11 +783,10 @@ final class SpecificationTests: XCTestCase {
                  .puppyRescued(_, let positions, let score):
                 for p in positions { replay[p] = nil }
                 points += score
-            case .specialCreated(let p, let tile), .puppySpawned(let p, let tile), .teidoComboAchievement(let p, let tile),
-                 .snackRunCompleted(_, let p, let tile):
+            case .specialCreated(let p, let tile), .puppySpawned(let p, let tile), .teidoComboAchievement(let p, let tile):
                 replay[p] = tile
             case .gravityApplied(let moves), .boardShuffled(let moves, _): moveTiles(moves)
-            case .tilesSpawned(let spawns):
+            case .tilesSpawned(let spawns), .stageFinale(let spawns):
                 for spawn in spawns { replay[spawn.at] = spawn.tile }
             case .snoreSpawned(let p, let bubble): replay[p]?.snore = bubble
             case .snoreDrifted(let from, let to):

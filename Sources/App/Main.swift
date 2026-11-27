@@ -24,6 +24,7 @@ final class MunchiesAppController {
     private var input: InputHandler!
 
     private var activeCombo: Int = 1
+    private var bonusPitch = 0
     private var cupcakeState: String = "idle"
     private var teidoState: String = "gaming"
     private var cupcakeCheerTime: Double = 0
@@ -76,20 +77,11 @@ final class MunchiesAppController {
         dom.showScreen("home")
 
         dom.onPlayTapped = { [weak self] in
-            self?.startNewRun()
+            self?.startStage()
         }
-        dom.onMissionsTapped = { [weak self] in
-            guard let self else { return }
-            self.dom.showMissions(storage: self.storage)
-        }
-        dom.onMissionSelected = { [weak self] mission in
-            guard let self, self.storage.isMissionUnlocked(mission) else { return }
-            self.startNewRun(mission: mission)
-        }
-        dom.onMissionNextTapped = { [weak self] in
-            guard let self, let attempt = self.resolver.mission, attempt.result == .cleared,
-                  let next = attempt.definition.next, self.storage.isMissionUnlocked(next) else { return }
-            self.startNewRun(mission: next)
+        dom.onNextStageTapped = { [weak self] in
+            guard let self, case .cleared = self.resolver.stage?.result else { return }
+            self.startStage()
         }
         dom.onHomeTapped = { [weak self] in
             guard let self else { return }
@@ -98,30 +90,16 @@ final class MunchiesAppController {
             self.renderer.cancelPlayback()
             self.input.reset()
             self.runJournal.reset()
-            self.syncObjectivePanel()
             self.dom.updateHomeStats(storage: self.storage)
             self.dom.renderScrapbook(storage: self.storage)
             self.dom.showScreen("home")
         }
         dom.onRestartTapped = { [weak self] in
             guard let self else { return }
-            self.startNewRun(mission: self.resolver.mission?.definition)
+            self.startStage()
         }
         dom.onShuffleTapped = { [weak self] in
             self?.handleManualShuffle()
-        }
-        dom.onSnackRunSelected = { [weak self] kind in
-            guard let self, self.canPlayTurn, self.resolver.acceptSnackRun(kind) else { return }
-            self.input.reset()
-            self.idleSeconds = 0
-            self.syncObjectivePanel()
-            self.renderer.render()
-        }
-        dom.onSnackRunSkipped = { [weak self] in
-            guard let self, self.canPlayTurn else { return }
-            self.resolver.skipSnackRun()
-            self.syncObjectivePanel()
-            self.renderer.render()
         }
         dom.onPauseChanged = { [weak self] paused in
             guard let self else { return }
@@ -154,23 +132,24 @@ final class MunchiesAppController {
         startAnimationLoop()
     }
 
-    private func startNewRun(mission: MiniMission? = nil) {
+    private func startStage() {
         isPlaying = true
         isDialogPaused = false
         lastFrameMs = 0
         activeCombo = 1
+        bonusPitch = 0
         cupcakeState = "idle"
         teidoState = "gaming"
         cupcakeCheerTime = 0
         teidoCheerTime = 0
         idleSeconds = 0
-        runJournal.reset()
         input.reset()
         renderer.cancelPlayback()
-        resolver = mission.map { CascadeResolver(mission: $0) }
-            ?? CascadeResolver(seed: UInt64.random(in: 1...UInt64.max))
+        let stage = CravingStage(number: storage.data.nextCraving)
+        resolver = CascadeResolver(stage: stage, seed: UInt64.random(in: 1...UInt64.max))
+        runJournal.beginStage(stage)
         dom.showScreen("game")
-        syncObjectivePanel()
+        if let attempt = resolver.stage { dom.updateStage(attempt) }
         renderer.resize()
         renderer.cosmetics = storage.cosmetics
         renderer.syncFullBoard(resolver.board)
@@ -190,11 +169,10 @@ final class MunchiesAppController {
         activeCombo = 1
         let previous = resolver.stats
         let steps = resolver.performSwap(from: from, to: to)
-        if let attempt = resolver.mission {
-            if attempt.result == .cleared { storage.recordMissionClear(attempt.definition) }
-        } else {
-            storage.recordProgress(from: previous, to: resolver.stats, steps: steps)
+        if resolver.stats.movesMade > previous.movesMade, let stage = resolver.stage {
+            dom.updateStageBudget(stage.movesRemaining)
         }
+        storage.recordProgress(from: previous, to: resolver.stats, steps: steps, stage: resolver.stage)
         play(steps)
     }
 
@@ -206,7 +184,6 @@ final class MunchiesAppController {
 
     private func play(_ steps: [BoardStep]) {
         guard !steps.isEmpty else { return }
-        dom.setSnackRunControlsEnabled(false)
         renderer.playSteps(
             steps,
             finalBoard: resolver.board,
@@ -216,35 +193,17 @@ final class MunchiesAppController {
     }
 
     private func finishPlayback() {
-        if resolver.mission == nil {
-            runJournal.finishTurn(stats: resolver.stats, tierProgressFraction: resolver.tierProgressFraction)
-        }
         renderer.cosmetics = storage.cosmetics
         refreshIdleAvatars()
         refreshHUD()
-        syncObjectivePanel()
-        if let attempt = resolver.mission, let result = attempt.result {
+        guard let attempt = resolver.stage else { return }
+        runJournal.finishTurn(moves: resolver.stats.movesMade, progress: attempt.progressFraction)
+        dom.updateStage(attempt)
+        if let result = attempt.result {
             syncMusicPlayback()
-            if result == .cleared { audio.playTierUp() }
-            dom.showMissionResult(attempt, result: result)
-        } else if let reason = resolver.gameOverReason {
-            syncMusicPlayback()
-            dom.showGameOver(reason: reason, stats: resolver.stats, highScore: storage.data.highScore)
+            if case .cleared(_, 0) = result { audio.playTierUp() }
+            dom.showStageResult(attempt, result: result)
         }
-    }
-
-    private func syncObjectivePanel() {
-        let state = isPlaying ? resolver.snackRun : .idle
-        let mission = isPlaying ? resolver.mission : nil
-        dom.updateSnackRun(state)
-        dom.updateMission(mission, showStory: mission == nil && state == .idle)
-        let receipts: Set<GridPos>
-        if case .active(let run) = state {
-            receipts = run.remainingReceipts
-        } else {
-            receipts = []
-        }
-        renderer.setObjectiveMarkers(receipts: receipts, counter: mission?.definition.counter)
     }
 
     private func syncMusicPlayback() {
@@ -253,7 +212,7 @@ final class MunchiesAppController {
     }
 
     private func handleStepCue(_ step: BoardStep) {
-        if resolver.mission == nil { runJournal.record(step) }
+        runJournal.record(step)
         switch step {
         case .swap(_, _, let reverted):
             reverted ? audio.playInvalidSwap() : audio.playSwap()
@@ -264,6 +223,15 @@ final class MunchiesAppController {
 
         case .specialTriggered:
             audio.playSpecialBlast()
+            if bonusPitch > 0 {
+                audio.playMatchPop(cascadeDepth: min(bonusPitch, 12))
+                bonusPitch += 1
+            }
+
+        case .stageFinale(let placements):
+            bonusPitch = 1
+            dom.showFinaleBonus(placements.count)
+            audio.playTierUp()
 
         case .snoreSpawned:
             audio.playSnoreSpawn()
@@ -286,9 +254,6 @@ final class MunchiesAppController {
 
         case .tierUp(_, let surge, _, _, _, _):
             surge == .teido ? audio.playTeidoAchievement() : audio.playTierUp()
-
-        case .snackRunCompleted:
-            audio.playTierUp()
 
         case .boardShuffled:
             audio.playSwap()
@@ -341,6 +306,7 @@ final class MunchiesAppController {
             activeCombo: activeCombo,
             cupcakeState: cupcakeState,
             teidoState: teidoState,
+            lifetimePuppies: storage.data.totalPuppiesRescued,
             hasSleepingPuppy: storage.isUnlocked(.firstPuppyAdopted)
         )
     }
@@ -389,11 +355,11 @@ final class MunchiesAppController {
                 self.renderer.tick(dt: dt)
                 self.tickAvatars(min(0.05, max(0, dt)))
 
-                if self.resolver.mission == nil && !self.renderer.isAnimating && !self.resolver.isGameOver {
+                if !self.renderer.isAnimating && !self.resolver.isGameOver {
                     self.idleSeconds += min(0.05, max(0, dt))
                     if self.idleSeconds >= 5.0 {
                         self.idleSeconds = 0
-                        if let hint = MoveValidator.findBestHint(in: self.resolver.board) {
+                        if let hint = self.resolver.suggestedMove() {
                             self.renderer.pulseHint(hint)
                         }
                     }

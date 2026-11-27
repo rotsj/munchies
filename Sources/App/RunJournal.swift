@@ -9,7 +9,6 @@ private struct RunMoment {
     let title: String
     let detail: String
     let art: Art
-    var resultCaption: String?
 
     var priority: Int {
         switch art {
@@ -32,35 +31,32 @@ private struct RunMoment {
             Self(title: "Puppy rescued!", detail: "+\(points) points", art: .rescue)
         case .snoreSpawned(_, let bubble):
             Self(title: "Teido nodded off", detail: bubble.isDoubleZzz ? "The bubble takes two hits." : "Match beside a snore bubble to pop it.", art: .snore)
-        case .tierUp(let tier, let surge, let banner, _, _, let earnedShuffle):
-            Self(title: banner, detail: "Tier \(tier)" + (earnedShuffle ? " · +1 shuffle" : ""),
-                 art: tierArt(surge, banner: banner))
         case .teidoComboAchievement:
             Self(title: "Combo achievement!", detail: "Teido added a Korv Rocket.", art: .teido)
-        case .snackRunCompleted(let kind, _, _):
-            Self(title: "\(kind.title) complete!", detail: "\(kind.rewardName) added to the board.",
-                 art: kind == .biltemaDash ? .biltema : .poke, resultCaption: "\(kind.rewardName) earned")
-        case .snackRunExpired(let kind):
-            Self(title: "\(kind.title) expired", detail: "Six swaps used.",
-                 art: kind == .biltemaDash ? .biltema : .poke, resultCaption: "Six swaps used")
         default:
             nil
         }
     }
 
-    private static func tierArt(_ surge: CravingSurge, banner: String) -> Art {
-        switch surge {
-        case .cupcake: .cupcake
-        case .teido: .couch
-        case .none:
-            switch banner {
-            case "Afternoon Biltema Run!", "Pre-17:00 Korv Dash!": .biltema
-            case "Hermanos Taco Feast!": .taco
-            case "Partille Poke Craving!": .poke
-            default: .snack
-            }
+    static func introduction(_ stage: CravingStage) -> Self? {
+        if stage.spotlight == .cupcake {
+            return Self(title: "Cupcake Spotlight", detail: "Cupcakes and Big Macs count twice. Puppies visit more often.", art: .cupcake)
         }
+        if stage.spotlight == .teido {
+            return Self(title: "Teido Spotlight", detail: "Pad Thai is on the board. A 3× cascade earns a Korv Rocket.", art: .couch)
+        }
+        guard stage.stageInChapter == 1 || stage.isFinale else { return nil }
+        let art: Art = switch stage.chapterSnack {
+        case .biltemaCombo: .biltema
+        case .hermanosTaco: .taco
+        case .partillePoke: .poke
+        case .teido: .couch
+        default: .snack
+        }
+        let title = stage.chapterTheme + (stage.isFinale ? " Finale" : "")
+        return Self(title: title, detail: stage.isFinale ? "Two goals across \(stage.moveLimit) swaps." : "A new chapter on the Craving Trail.", art: art)
     }
+
 }
 
 /// Pins one moment at a time. The journal keeps the other highlights in reading order.
@@ -84,6 +80,11 @@ final class RunJournal {
         empty?.hidden = .boolean(false)
     }
 
+    func beginStage(_ stage: CravingStage) {
+        reset()
+        if let introduction = RunMoment.introduction(stage) { addToJournal(introduction) }
+    }
+
     func record(_ step: BoardStep) {
         switch step {
         case .matchCleared(_, _, _, let kinds):
@@ -97,39 +98,39 @@ final class RunJournal {
         }
     }
 
-    func finishTurn(stats: RunStats, tierProgressFraction: Double) {
-        if stats.tier > 1 || tierProgressFraction >= 0.60 { recordOnce(.schedule) }
+    func finishTurn(moves: Int, progress: Double) {
+        if progress >= 0.60 { recordOnce(.schedule) }
         if snacks.contains(.cupcake) && snacks.contains(.bigMac) { recordOnce(.gemini) }
         snacks.removeAll()
         if moments.isEmpty { return }
-        for moment in moments {
-            _ = journal?.prepend?(makeCard(moment, tag: "li"))
-            if (journal?.childElementCount.number ?? 0) > 24 { _ = journal?.lastElementChild.object?.remove?() }
-        }
-        empty?.hidden = .boolean(true)
+        for moment in moments { addToJournal(moment) }
 
-        let canPinStory = lastMomentSwap.map { stats.movesMade - $0 >= 6 } ?? true
-        let chosen = moments.last { $0.resultCaption != nil }
-            ?? (canPinStory ? moments.max { $0.priority < $1.priority } : nil)
-        if let chosen {
+        if lastMomentSwap.map({ moves - $0 >= 6 }) ?? true,
+           let chosen = moments.max(by: { $0.priority < $1.priority }) {
             pinned?.textContent = .string("")
-            _ = pinned?.appendChild?(makeCard(chosen, tag: "div", isPinned: true))
-            lastMomentSwap = stats.movesMade
+            _ = pinned?.appendChild?(makeCard(chosen, tag: "div"))
+            lastMomentSwap = moves
         }
         moments.removeAll()
+    }
+
+    private func addToJournal(_ moment: RunMoment) {
+        _ = journal?.prepend?(makeCard(moment, tag: "li", showDetail: true))
+        if (journal?.childElementCount.number ?? 0) > 24 { _ = journal?.lastElementChild.object?.remove?() }
+        empty?.hidden = .boolean(true)
     }
 
     private func recordOnce(_ moment: RunMoment) {
         if oncePerRun.insert(moment.art).inserted { moments.append(moment) }
     }
 
-    private func makeCard(_ moment: RunMoment, tag: String, isPinned: Bool = false) -> JSObject {
+    private func makeCard(_ moment: RunMoment, tag: String, showDetail: Bool = false) -> JSObject {
         let card = element(tag, "event-card")
         card.dataset.art = .string(moment.art.rawValue)
         let copy = element("div", "event-copy")
         _ = copy.appendChild?(element("strong", "event-title", text: moment.title))
-        if let detail = isPinned ? moment.resultCaption : moment.detail {
-            _ = copy.appendChild?(element("span", "event-detail", text: detail))
+        if showDetail {
+            _ = copy.appendChild?(element("span", "event-detail", text: moment.detail))
         }
         let art = element("span", "event-art")
         _ = art.setAttribute?("aria-hidden", "true")

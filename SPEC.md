@@ -4,7 +4,7 @@
 * **App Title / Home Screen Name:** *Munchies*
 * **Platform & Deployment:** Progressive Web App (PWA) written in **Swift 6**, compiled to **WebAssembly (`wasm32-unknown-wasi` / SwiftWasm)**, and deployed as static assets on **Cloudflare Pages** (with optional Cloudflare Workers / KV for shared couple leaderboards).
 * **Target Hardware:** Mobile Safari on **iPhone 14 Pro Max** and **iPhone 17 Pro Max** (installed to Home Screen via `display: "standalone"`, Portrait-locked, 120Hz ProMotion `requestAnimationFrame` loop, `viewport-fit=cover` with `env(safe-area-inset-*)` support).
-* **Core Loop:** Swap adjacent snack tiles on an $8 \times 9$ grid to match 3 or more, trigger cascading combos, manage the **Teido Snore** hazard, rescue stray **Puppies**, and ride alternating **Cupcake & Teido Craving Surges** across endless **Night Owl Tiers**.
+* **Core Loop:** Swap adjacent snack tiles on an $8 \times 9$ grid to match 3 or more, trigger cascading combos, manage the **Teido Snore** hazard, rescue stray **Puppies**, and clear numbered stages along the **Craving Trail**.
 * **Tone & Aesthetic:** Cozy, playful, slightly goofy, and ultra-responsive—relying on juicy spring physics, tactile WebAudio cues, and smooth 2D Canvas rendering without heavy meta-game bloat.
 
 ---
@@ -73,68 +73,23 @@ Animated portraits of **Cupcake** and **Teido** flank the top HUD next to the Sc
 
 ---
 
-## 4. Endless Progression & Character Craving Surges
+## 4. The Craving Trail
 
-Instead of finite levels or energy timers, a single run advances infinitely through numbered **Night Owl Tiers** (`Tier 1`, `Tier 2`, `Tier 3`... $\infty$).
+Craving stages form the main game. The home screen resumes at the first uncleared stage. Five stages make a chapter with a two-objective finale. Biltema Run, Hermanos Taco Night, Partille Poke Date, and PS5 After Dark repeat as numbered encores. Stage numbers continue across loops.
 
-### A. Character-Themed Craving Surges (Alternating Tiers)
-Shared snacks (**Hermanos Tacos**, **Partille Poke Bowls**, and **Biltema Combos**) grant equal base rewards across all Tiers. Every 3rd Tier activates a character spotlight for one full Tier duration:
+| Chapter slot | Objective | Opening setup |
+| --- | --- | --- |
+| 1 | Collect the chapter's snack | Normal opening board |
+| 2 | Pop four snore bubbles | Four bubbles placed in separate areas with nearby matching opportunities |
+| 3 | Guide one puppy to the bottom | The puppy starts one row from home with at least two visible opening swaps that can rescue it |
+| 4 | Cupcake or Teido Spotlight | Cupcakes and Big Macs count twice for Cupcake, and puppies visit more frequently. Teido starts with Pad Thai and a Korv Rocket. A 3× cascade grants the existing PS5 Combo Perk. |
+| 5 | Collect the chapter's snack and finish a second goal | Second goals rotate through snores, a Fiesta Bomb, a puppy, and a special-tile combination. Relevant pieces are ready on the opening board. |
 
-* **Cupcake's Craving Surge (`Tier 3, 9, 15...`):**
-  * **Big Mac & Cupcake Bonus:** Matching **Big Macs** or **Cupcakes** awards `+25%` bonus points.
-  * **Puppy Magnet:** Puppy spawn frequency increases by `30%` for the duration of the Tier.
-* **Teido's Craving Surge (`Tier 6, 12, 18...`):**
-  * **Pad Thai Feast:** **Pad Thai** bonus tiles spawn onto the board (matching adjacent to or swapping with Pad Thai awards `+25%` bonus points and clears an extra cross `+` of tiles).
-  * **PS5 "Combo Multiplier" Buff:** Teido's controller lights up; every `3x+` cascade triggers a **"Combo Achievement Unlocked!"** badge that spawns an extra **Biltema Korv Rocket** onto the board.
+Legal swaps spend one move. Failed swaps and the emergency shuffle leave the budget alone. Cleared snacks count from matches, specials, and rescue blasts. Popped snores, rescues, and qualifying special activations each count once. Stage goals and the swap budget stay in view above the board. After idle play, the hint favors visible moves that advance an unfinished goal.
 
-### B. Tier Advancement & Breathing Room
-* **Tier Progress Bar:** Fills as tiles are cleared (`tierTarget = baseTarget * pow(1.18, Double(tier - 1))`).
-* **Tier Up Celebration:** Filling the bar pops all active **Snore Bubbles** for bonus points and adds an illustrated snack event to the run history (e.g., *"Afternoon Biltema Run!"*, *"Pre-17:00 Korv Dash!"*, *"Hermanos Taco Feast!"*, *"Partille Poke Craving!"*). Play continues while the event is displayed.
-* **Lifeline & Fair Lose Conditions:**
-  * Players start with **1 Emergency Shuffle** (spinning *Biltema Hotdog* icon, max capacity `2`), earning `+1` back every **3rd Tier** completed.
-  * A run ends only when: (1) **12+ tiles** are locked by Snore Bubbles simultaneously, or (2) **0 valid swaps** remain and `availableShuffles == 0`.
+Completing every objective clears the stage, including on its final swap. Each spare swap adds one rocket or bomb to a chain of bonus detonations using the normal blast and scoring rules. A clear earns one star, rising to two with at least two spare swaps or three with at least five. The game saves the clear and stars before showing the result. Failure shows the exact progress on each objective. Retry starts a fresh seeded board at the same stage and uses the same budget.
 
-### C. Multi-Layered Difficulty Curve
-
-| Tier Range | Snore Spawn Cadence | Snore Bubble Variants | Base Puppy Cadence | Board & Scoring Dynamics |
-| :--- | :--- | :--- | :--- | :--- |
-| **Tiers 1–3** *(Warm-Up)* | 1 bubble every **6 moves** | Standard 1-hit bubble | Every **12,000 pts** *(faster in Tier 3)* | `1.0x` base multiplier; high match-assist spawn bias. |
-| **Tiers 4–7** *(Getting Cozy)* | 1 bubble every **5 moves** | Standard + **Double-Zzz** (2 hits) | Every **20,000 pts** | `1.5x` base multiplier; neutral spawn weighting. |
-| **Tiers 8–12** *(Light Sleeper Alert)* | 1 bubble every **4 moves** | Standard + Double-Zzz + **Drifting** (rises 1 row / 3 turns) | Every **30,000 pts** (up to **2 puppies** at once) | `2.0x` base multiplier; mild anti-clump spawning requires intentional special setups. |
-| **Tiers 13+** *(Deep REM Overtime)* | Caps at **1 bubble every 3 moves** (hard ceiling) | Full mix (capped density) | Every **40,000 pts** (rescuing clears $5 \times 5$) | Multiplier scales `+0.25x` per tier infinitely. |
-
-### D. Couple's Milestone Scrapbook (Passive Meta-Progression)
-A gallery view accessible from the Home Screen that shows eight illustrated Polaroid tracks. Tier 1 keeps the original requirements and cosmetic rewards:
-1. **Pre-17:00 Korv Dash** — *Score 10,000 cumulative points* (Unlocks Biltema blue-and-white board trim).
-2. **Cupcake's Big Mac Run** — *Match 100 Big Mac tiles* (Turns the brief particle burst on Big Mac matches gold).
-3. **Teido's Pad Thai & PS5 Night** — *Trigger 10 Teido Craving Surges* (Unlocks neon controller-glow backdrop).
-4. **Hermanos Taco Tuesday** — *Create 15 Fiesta Bombs* (Unlocks warm fiesta sunset backdrop).
-5. **Partille Poke Date** — *Trigger a 5x cascade combo* (Unlocks coastal pastel backdrop).
-6. **First Puppy Adopted** — *Rescue 1 Puppy* (Adds a tiny sleeping puppy next to Cupcake's avatar).
-7. **Pack Leader** — *Rescue 25 Puppies* (Unlocks Puppy Paw tile trail effect).
-8. **Survived Teido's Snoring** — *Pop 50 Snore Bubbles* (Unlocks cozy midnight-blue "Light Sleeper" theme).
-
-Each track always shows its next tier. Tier `n` asks for `n` times the first goal in additional progress, so Korv Dash reaches Tier 2 at 30,000 lifetime points and Tier 3 at 60,000. Surplus counts toward the next goal. Partille Poke Date counts each turn that reaches a cascade of 5× or more once. A legacy save with a qualifying best cascade starts with one qualifying turn. The album shows tiers earned without a completion cap.
-
-### E. Optional Snack Runs
-
-- After successful swaps **10, 35, 60, ...**, the game offers the Snack Runs that have a verified route on the settled board. Each offer can be accepted, skipped, or dismissed by making another successful swap or an emergency shuffle. Invalid swaps leave the offer available.
-- Accepting a challenge gives the player up to **six successful swaps** to complete it. Failed attempts, time spent, and emergency shuffles do not use that allowance. The player can leave a challenge early. Skipping, leaving, and expiring carry no penalty. The next offer follows the same swap schedule.
-- **Biltema Dash.** Clear the three cells marked with receipts. Matches and blasts collect receipts from the cells they clear. The markers stay on those cells until collected, including through gravity and shuffles. The reward is a horizontal **Korv Rocket**.
-- **Partille Poke Order.** Match the displayed first ingredient, then match Partille Poke on a later successful swap. The order favors Hermanos Taco when a route is available. Each swap advances at most one ingredient, including through cascades. Blast damage alone does not count as a match. The reward is a **Fiesta Bomb**.
-- An accepted Snack Run shows its goal and swaps left above the board. Completion places one reward on an ordinary, unlocked snack, favoring a tile that can take part in a match. If no tile is eligible, placement waits for a later successful swap. Normal scoring and tier progression continue throughout. Ending the game clears the Snack Run.
-
-### F. Missions
-
-**Play Missions** opens three fixed puzzles. Each goal must be met within its swap budget to clear the puzzle and unlock the next one. A cleared puzzle can be replayed. Retrying restores the starting layout and refill seed. The current goal and remaining swaps stay visible above the board.
-
-| Mission | Swaps | Goal |
-| --- | ---: | --- |
-| Puppy Pickup | 5 | Guide both starting puppies to the bottom row. |
-| Biltema Delivery | 6 | Create a Korv Rocket and hit the flagged counter with a rocket blast. |
-| Couch Co-op | 7 | Make a Fiesta Bomb and swap it with a Korv Rocket to trigger their combination. The board starts with one rocket. |
-
-Only successful swaps spend the budget. An objective completed on the final swap clears the mission. Exhausting the budget or running out of legal swaps ends the attempt. The puzzles use the same matching, gravity, rescue, and power-up rules as Endless, with fixed starting pieces, zero emergency shuffles, and no new snores, puppies, tier advances, or Snack Run offers. Mission clears save locally. Endless scores and scrapbook progress come from Endless runs.
+The Couple's Scrapbook keeps its illustrated tracks and cosmetic unlocks. Craving Trail Postcards advances with chapter finales and unlocks the Trail Dusk backdrop after the first finale. Each track keeps an uncapped sequence of next goals. Teido Spotlight clears add to the existing PS5 scrapbook track.
 
 ---
 
@@ -142,7 +97,7 @@ Only successful swaps spend the budget. An objective completed on the final swap
 
 To prevent both accidental infinite cascades and cheap RNG deadlocks, `Match3Engine` uses **Constraint-Aware Weighted Generation** governed by `SpawnDifficultyProfile`.
 
-### A. Initial Board Generation (`Tier 1` Start)
+### A. Initial Board Generation
 1. **Zero Pre-Existing Matches:** Populate `(row 0..8, col 0..7)` sequentially, excluding any tile type that already occupies both `(r, c-1)` & `(r, c-2)` or `(r-1, c)` & `(r-2, c)`.
 2. **Guaranteed Opening Swaps ($\ge 3$):** Validate with `MoveValidator.findAllValidMoves()`. If fewer than 3 valid swaps exist, perform targeted cell swaps until at least 3 legal moves are present.
 
@@ -152,6 +107,8 @@ Whenever tiles clear and gravity drops remaining tiles downward, `TileSpawner` f
 1. **Match-Assist Bias (`matchAssistBonus`):** Inspects adjacent tiles below/beside the empty slot. If placing tile type $T$ creates a 2-in-a-row setup, adds `matchAssistBonus` (`+45` at Tier 1 down to `-20` at Tier 10+).
 2. **Clump Affinity (`clumpAffinity`):** Adjusts weight when identical tiles sit orthogonally adjacent (`+15` at Tier 1 to help form 4/5-matches easily; `-25` at Tier 10+ to spread tiles apart and demand multi-step planning).
 3. **Cupcake Mercy Weight:** When `activeSnoreCount >= cupcakeMercyThreshold`, boosts Cupcake spawn weight to `125` (Tiers 1–3) or `105` (Tiers 4+) so players always have a fair path to clear snoring hazards.
+
+4. **Objective assistance:** Trail refills mildly favor the current required snack. During the last three swaps, with six or fewer snack credits missing, that weight rises. The anti-match cap still applies.
 
 ### C. Hard Safety Guardrails
 * **Silent Deadlock Rescue:** After a refill settles, if `MoveValidator.findAllValidMoves().isEmpty`, `TileSpawner` silently re-rolls the newly spawned top rows once using a guaranteed-match seed before resorting to consuming an Emergency Shuffle.
@@ -191,15 +148,15 @@ The page uses `height: 100dvh`, `overflow: hidden`, and disabled text selection.
 
 Safe-Area Layout Zones:
 
-Top Safe Area (padding-top: env(safe-area-inset-top)): Clears the Dynamic Island; houses the Co-op Corner Avatars (Cupcake & Teido), Current Score, High Score, Pause button, Snore-O-Meter, and Tier Progress Bar.
+Top Safe Area (padding-top: env(safe-area-inset-top)): Clears the Dynamic Island; houses the Co-op Corner Avatars (Cupcake & Teido), current score, swap budget, stage goals, Snore-O-Meter, and chapter progress.
 
 Center Stage: A Retina-scaled HTML5 canvas shows the 8 × 9 grid on a solid neutral surface with subtle grid lines. Each snack is recognized by its own silhouette and dominant color.
 
-Run Story pins one illustrated headline above the board. Automatic story changes are at least six successful swaps apart. The selected moment stays in place until the next one, and opening the Run Journal pauses play for reading. The journal keeps the full text of up to 24 recent moments and records Teido's first snore once per run. Snack Run results appear when resolved. Point and combo callouts appear on the board. Story animations follow the system's reduced-motion setting.
+Run Story pins one illustrated headline above the board on tall viewports. Automatic story changes are at least six successful swaps apart. The selected moment stays in place until the next one, and opening the Run Journal pauses play for reading. The journal keeps the full text of up to 24 recent moments and records Teido's first snore once per stage. Point and combo callouts appear on the board. Story animations follow the system's reduced-motion setting.
 
-* **Cupcake's 60% Rule** appears the first time Tier 1 progress reaches or passes 60%, including a turn that advances past Tier 1. A study notebook opens beside her work laptop.
+* **Cupcake's 60% Rule** appears when average stage objective progress first reaches 60%. A study notebook opens beside her work laptop.
 * **Gemini Mode** appears the first time a single turn matches both Cupcakes and Big Macs, including matches in different waves of that turn. The two snacks trade places in the card.
-* **PS5 Couch Mode** appears on the first `4x+` combo wake-up in a run. The TV lights up as Teido plays from the couch. The couch scene also accompanies later Teido Craving Surge cards.
+* **PS5 Couch Mode** appears on the first `4x+` combo wake-up in a run. The TV lights up as Teido plays from the couch. The couch scene also accompanies Teido Spotlight introductions.
 
 Bottom Safe Area (padding-bottom: max(24px, env(safe-area-inset-bottom))): Dedicated thumb-rest zone keeping fingers clear of the iOS Home Indicator; displays active Cascade Multiplier, Puppies Rescued counter, and the Emergency Shuffle badge.
 

@@ -44,9 +44,9 @@ public struct DifficultyConfig: Sendable, Equatable {
     public static let maxEmergencyShuffles: Int = 2
     public static let startingEmergencyShuffles: Int = 1
 
-    public static func forTier(_ tier: Int) -> DifficultyConfig {
+    public static func forTier(_ tier: Int, spotlight: CravingSurge? = nil) -> DifficultyConfig {
         let safeTier = max(1, tier)
-        let surge = CravingSurge.forTier(safeTier)
+        let surge = spotlight ?? CravingSurge.forTier(safeTier)
 
         let snoreCadence: Int
         let basePuppyInterval: Int

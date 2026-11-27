@@ -75,7 +75,7 @@ test('home Settings checks the current version and gives a retryable offline res
   await expect(status).toHaveText('Munchies is up to date.');
 
   await settings.getByRole('button', { name: 'Close settings' }).tap();
-  await page.getByRole('button', { name: 'Play Endless Run' }).tap();
+  await page.getByRole('button', { name: 'Play Craving Trail' }).tap();
   await page.getByRole('button', { name: 'Pause' }).tap();
   await expect(settings).toBeVisible();
   await expect(check).toBeHidden();
@@ -125,7 +125,7 @@ for (const alreadyActive of [false, true]) {
       await context.setOffline(true);
       await Promise.all([page.waitForEvent('load'), update.tap()]);
       await expect(build).toHaveAttribute('content', server.nextBuild);
-      await expect(page.getByRole('button', { name: 'Play Endless Run' })).toBeEnabled();
+      await expect(page.getByRole('button', { name: 'Play Craving Trail' })).toBeEnabled();
       await expect(page.locator('#home-highscore')).toHaveText('8420');
       await page.getByRole('button', { name: 'Settings', exact: true }).tap();
       await expect(settings.getByRole('checkbox', { name: 'Screen Shake' })).not.toBeChecked();

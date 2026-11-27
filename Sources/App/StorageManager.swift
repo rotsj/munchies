@@ -2,7 +2,7 @@ import Engine
 import FoundationEssentials
 import JavaScriptKit
 
-/// The eight tiered Polaroids in the Couple's Milestone Scrapbook.
+/// The tiered Polaroids in the Couple's Milestone Scrapbook.
 enum ScrapbookMilestone: String, CaseIterable, Codable {
     case korvDash
     case bigMacRun
@@ -12,6 +12,7 @@ enum ScrapbookMilestone: String, CaseIterable, Codable {
     case firstPuppyAdopted
     case packLeader
     case survivedSnoring
+    case cravingTrail
 
     var title: String {
         switch self {
@@ -23,6 +24,7 @@ enum ScrapbookMilestone: String, CaseIterable, Codable {
         case .firstPuppyAdopted: return "First Puppy Adopted"
         case .packLeader: return "Pack Leader"
         case .survivedSnoring: return "Survived Teido's Snoring"
+        case .cravingTrail: return "Craving Trail Postcards"
         }
     }
 
@@ -36,6 +38,7 @@ enum ScrapbookMilestone: String, CaseIterable, Codable {
         case .firstPuppyAdopted: return "Rescue 1 Puppy"
         case .packLeader: return "Rescue 25 Puppies"
         case .survivedSnoring: return "Pop 50 Snore Bubbles"
+        case .cravingTrail: return "Clear a chapter finale"
         }
     }
 
@@ -45,7 +48,7 @@ enum ScrapbookMilestone: String, CaseIterable, Codable {
         case .bigMacRun: return 100
         case .padThaiPS5Night: return 10
         case .tacoTuesday: return 15
-        case .pokeDate, .firstPuppyAdopted: return 1
+        case .pokeDate, .firstPuppyAdopted, .cravingTrail: return 1
         case .packLeader: return 25
         case .survivedSnoring: return 50
         }
@@ -60,6 +63,7 @@ enum ScrapbookMilestone: String, CaseIterable, Codable {
         case .pokeDate: return "5×+ cascades"
         case .firstPuppyAdopted, .packLeader: return "puppies"
         case .survivedSnoring: return "snore bubbles"
+        case .cravingTrail: return "chapter finales"
         }
     }
 
@@ -72,6 +76,7 @@ enum ScrapbookMilestone: String, CaseIterable, Codable {
         case .pokeDate: return data.fivePlusCascades
         case .firstPuppyAdopted, .packLeader: return data.totalPuppiesRescued
         case .survivedSnoring: return data.totalSnoreBubblesPopped
+        case .cravingTrail: return UInt64(data.cravingsCleared / CravingStage.stagesPerChapter)
         }
     }
 
@@ -85,6 +90,7 @@ enum ScrapbookMilestone: String, CaseIterable, Codable {
         case .firstPuppyAdopted: return "Sleeping puppy next to Cupcake"
         case .packLeader: return "Puppy Paw tile trail effect"
         case .survivedSnoring: return "Midnight-blue Light Sleeper theme"
+        case .cravingTrail: return "Trail Dusk backdrop"
         }
     }
 
@@ -98,6 +104,7 @@ enum ScrapbookMilestone: String, CaseIterable, Codable {
         case .firstPuppyAdopted: return "🐶💤"
         case .packLeader: return "🐾👑"
         case .survivedSnoring: return "🌙😴"
+        case .cravingTrail: return "🗺️🌙"
         }
     }
 }
@@ -108,6 +115,7 @@ enum BackdropTheme: String, CaseIterable, Codable {
     case fiestaSunset
     case coastalPastel
     case midnightLightSleeper
+    case trailDusk
 
     var displayName: String {
         switch self {
@@ -116,6 +124,7 @@ enum BackdropTheme: String, CaseIterable, Codable {
         case .fiestaSunset: return "Fiesta Sunset"
         case .coastalPastel: return "Partille Coastal"
         case .midnightLightSleeper: return "Light Sleeper"
+        case .trailDusk: return "Trail Dusk"
         }
     }
 }
@@ -131,7 +140,9 @@ struct PersistedProgress: Codable {
     var totalFivePlusCascades: UInt64?
     var totalSnoreBubblesPopped: UInt64 = 0
     var highestTierReached: Int = 1
-    var highestMissionCleared: Int?
+    var highestMissionCleared: Int? // Retained when rewriting a save from the earlier Missions release.
+    var highestCravingCleared: Int?
+    var cravingStars: UInt64?
 
     var soundEffectsEnabled: Bool = true
     var backgroundMusicEnabled: Bool?
@@ -140,6 +151,9 @@ struct PersistedProgress: Codable {
     var selectedBackdrop: BackdropTheme = .cozyDefault
 
     var musicEnabled: Bool { backgroundMusicEnabled ?? true }
+
+    var cravingsCleared: Int { max(0, highestCravingCleared ?? 0) }
+    var nextCraving: Int { cravingsCleared == Int.max ? Int.max : cravingsCleared + 1 }
 
     var fivePlusCascades: UInt64 {
         // Older saves only kept the best cascade, which proves at least one qualifying turn.
@@ -172,20 +186,6 @@ final class StorageManager {
         milestone.total(in: data) >= milestone.firstGoal
     }
 
-    var missionsCleared: Int {
-        min(MiniMission.allCases.count, max(0, data.highestMissionCleared ?? 0))
-    }
-
-    func isMissionUnlocked(_ mission: MiniMission) -> Bool {
-        mission.rawValue <= missionsCleared + 1
-    }
-
-    func recordMissionClear(_ mission: MiniMission) {
-        guard mission.rawValue == missionsCleared + 1 else { return }
-        data.highestMissionCleared = mission.rawValue
-        save()
-    }
-
     func progress(for milestone: ScrapbookMilestone) -> MilestoneProgress {
         MilestoneProgress(total: milestone.total(in: data), firstGoal: milestone.firstGoal)
     }
@@ -209,10 +209,11 @@ final class StorageManager {
         case .fiestaSunset: return isUnlocked(.tacoTuesday)
         case .coastalPastel: return isUnlocked(.pokeDate)
         case .midnightLightSleeper: return isUnlocked(.survivedSnoring)
+        case .trailDusk: return isUnlocked(.cravingTrail)
         }
     }
 
-    func recordProgress(from previous: RunStats, to current: RunStats, steps: [BoardStep]) {
+    func recordProgress(from previous: RunStats, to current: RunStats, steps: [BoardStep], stage: CravingAttempt?) {
         guard previous.movesMade != current.movesMade else { return }
         data.highScore = max(data.highScore, current.score)
         data.cumulativeScore = adding(current.score - previous.score, to: data.cumulativeScore)
@@ -229,6 +230,14 @@ final class StorageManager {
         data.bestCascadeCombo = max(data.bestCascadeCombo, current.maxCascadeReached)
         data.totalSnoreBubblesPopped = adding(current.snoreBubblesPopped - previous.snoreBubblesPopped, to: data.totalSnoreBubblesPopped)
         data.highestTierReached = max(data.highestTierReached, current.tier)
+        if let stage, case .cleared(let stars, _) = stage.result,
+           stage.definition.number == data.nextCraving, stage.definition.number > data.cravingsCleared {
+            data.highestCravingCleared = stage.definition.number
+            data.cravingStars = adding(stars, to: data.cravingStars ?? 0)
+            if stage.definition.spotlight == .teido {
+                data.totalTeidoSurgesTriggered = adding(1, to: data.totalTeidoSurgesTriggered)
+            }
+        }
         save()
     }
 

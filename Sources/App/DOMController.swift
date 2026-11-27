@@ -7,32 +7,23 @@ final class DOMController {
     private static let pausingDialogs = ["dialog-settings", "dialog-run-journal"]
     private let document = JSObject.global.document.object!
     private var closures: [JSClosure] = []
-    private var displayedSnackRun: SnackRunState = .idle
 
     var onPlayTapped: (() -> Void)?
-    var onMissionsTapped: (() -> Void)?
-    var onMissionSelected: ((MiniMission) -> Void)?
-    var onMissionNextTapped: (() -> Void)?
+    var onNextStageTapped: (() -> Void)?
     var onHomeTapped: (() -> Void)?
     var onRestartTapped: (() -> Void)?
     var onShuffleTapped: (() -> Void)?
-    var onSnackRunSelected: ((SnackRunKind) -> Void)?
-    var onSnackRunSkipped: (() -> Void)?
     var onSettingsChanged: ((Bool, Bool, Bool, Bool) -> Void)?
     var onThemeSelected: ((BackdropTheme) -> Void)?
     var onPauseChanged: ((Bool) -> Void)?
 
     func wireEvents() {
         bindClick("btn-play") { [weak self] in self?.onPlayTapped?() }
-        bindClick("btn-missions") { [weak self] in self?.onMissionsTapped?() }
         bindClick("btn-run-journal") { [weak self] in self?.openDialog("dialog-run-journal") }
         bindClick("btn-scrapbook") { [weak self] in self?.openDialog("dialog-scrapbook") }
         bindClick("btn-home-settings") { [weak self] in self?.openDialog("dialog-settings") }
         bindClick("btn-pause") { [weak self] in self?.openDialog("dialog-settings") }
         bindClick("btn-shuffle") { [weak self] in self?.onShuffleTapped?() }
-        bindClick("snack-run-dash") { [weak self] in self?.onSnackRunSelected?(.biltemaDash) }
-        bindClick("snack-run-poke") { [weak self] in self?.onSnackRunSelected?(.pokeOrder) }
-        bindClick("snack-run-skip") { [weak self] in self?.onSnackRunSkipped?() }
         bindClick("btn-settings-restart") { [weak self] in
             self?.closeDialog("dialog-settings")
             self?.onRestartTapped?()
@@ -41,15 +32,24 @@ final class DOMController {
             self?.closeDialog("dialog-settings")
             self?.onHomeTapped?()
         }
-        bindClick("btn-gameover-replay") { [weak self] in
-            self?.closeDialog("dialog-gameover")
+        bindClick("btn-stage-retry") { [weak self] in
+            self?.closeDialog("dialog-stage-result")
             self?.onRestartTapped?()
         }
-        bindClick("btn-gameover-home") { [weak self] in
-            self?.closeDialog("dialog-gameover")
+        bindClick("btn-stage-next") { [weak self] in
+            self?.closeDialog("dialog-stage-result")
+            self?.onNextStageTapped?()
+        }
+        bindClick("btn-stage-home") { [weak self] in
+            self?.closeDialog("dialog-stage-result")
             self?.onHomeTapped?()
         }
-        wireMissions()
+        let keepResultOpen = JSClosure { args in
+            _ = args.first?.object?.preventDefault?()
+            return .undefined
+        }
+        closures.append(keepResultOpen)
+        _ = byId("dialog-stage-result")?.addEventListener?("cancel", keepResultOpen)
 
         for id in ["toggle-sfx", "toggle-music", "toggle-snore", "toggle-shake"] {
             if let el = byId(id) {
@@ -70,69 +70,6 @@ final class DOMController {
             closures.append(onClose)
             _ = dialog.addEventListener?("close", onClose)
         }
-    }
-
-    private func wireMissions() {
-        guard let list = byId("mission-list") else { return }
-        for mission in MiniMission.allCases {
-            let id = "mission-\(mission.rawValue)"
-            let row = document.createElement!("li").object!
-            let button = document.createElement!("button").object!
-            button.id = .string(id)
-            button.type = .string("button")
-            button.className = .string("mission-choice")
-            _ = button.setAttribute?("aria-labelledby", "\(id)-title")
-            _ = button.setAttribute?("aria-describedby", "\(id)-status \(id)-detail")
-            let title = document.createElement!("strong").object!
-            title.id = .string("\(id)-title")
-            title.textContent = .string(mission.title)
-            let status = document.createElement!("span").object!
-            status.id = .string("\(id)-status")
-            status.className = .string("mission-choice-status")
-            let detail = document.createElement!("span").object!
-            detail.id = .string("\(id)-detail")
-            detail.className = .string("mission-choice-detail")
-            detail.textContent = .string(mission.instruction)
-            _ = button.appendChild?(title)
-            _ = button.appendChild?(status)
-            _ = button.appendChild?(detail)
-            _ = row.appendChild?(button)
-            _ = list.appendChild?(row)
-            bindClick(id) { [weak self] in
-                self?.closeDialog("dialog-missions")
-                self?.onMissionSelected?(mission)
-            }
-        }
-        bindClick("btn-mission-next") { [weak self] in
-            self?.closeDialog("dialog-mission-result")
-            self?.onMissionNextTapped?()
-        }
-        bindClick("btn-mission-retry") { [weak self] in
-            self?.closeDialog("dialog-mission-result")
-            self?.onRestartTapped?()
-        }
-        bindClick("btn-mission-home") { [weak self] in
-            self?.closeDialog("dialog-mission-result")
-            self?.onHomeTapped?()
-            self?.onMissionsTapped?()
-        }
-        let keepResultOpen = JSClosure { args in
-            _ = args.first?.object?.preventDefault?()
-            return .undefined
-        }
-        closures.append(keepResultOpen)
-        _ = byId("dialog-mission-result")?.addEventListener?("cancel", keepResultOpen)
-    }
-
-    func showMissions(storage: StorageManager) {
-        for mission in MiniMission.allCases {
-            let id = "mission-\(mission.rawValue)"
-            let unlocked = storage.isMissionUnlocked(mission)
-            let cleared = storage.missionsCleared >= mission.rawValue
-            byId(id)?.disabled = .boolean(!unlocked)
-            setText("\(id)-status", cleared ? "Cleared" : (unlocked ? "\(mission.moveLimit) swaps" : "Locked"))
-        }
-        openDialog("dialog-missions")
     }
 
     func showScreen(_ screen: String) {
@@ -163,75 +100,85 @@ final class DOMController {
     func updateHomeStats(storage: StorageManager) {
         setText("home-highscore", "\(storage.data.highScore)")
         setText("home-puppies", "\(storage.data.totalPuppiesRescued)")
+        setText("home-craving", "Craving \(storage.data.nextCraving)")
         let tiersEarned = storage.tiersEarned
         setText("home-scrapbook-count", "\(tiersEarned) \(tiersEarned == 1 ? "tier" : "tiers")")
     }
 
-    func updateSnackRun(_ state: SnackRunState) {
-        setSnackRunControlsEnabled(true)
-        guard state != displayedSnackRun else { return }
-        displayedSnackRun = state
-        let visible = state != .idle
-        byId("snack-run-panel")?.hidden = .boolean(!visible)
-        switch state {
-        case .idle:
-            break
-        case .offered(let goals):
-            byId("snack-run-choices")?.hidden = .boolean(false)
-            byId("snack-run-progress")?.hidden = .boolean(true)
-            byId("snack-run-dash")?.hidden = .boolean(!goals.contains { $0.kind == .biltemaDash })
-            byId("snack-run-poke")?.hidden = .boolean(!goals.contains { $0.kind == .pokeOrder })
-            for goal in goals {
-                if case .pokeOrder(let ingredient) = goal {
-                    setText("snack-run-poke-detail", "\(snackName(ingredient)) → Poke · Fiesta Bomb")
-                }
+    func updateStage(_ attempt: CravingAttempt) {
+        let stage = attempt.definition
+        setText("hud-tier", "CRAVING \(stage.number)")
+        let chapterName = stage.chapterTheme + (stage.isFinale ? " Finale" : "")
+        let chapter = stage.encore > 0 ? "\(chapterName) · Encore \(stage.encore)" : chapterName
+        setText("chapter-theme", chapter)
+        _ = byId("chapter-theme")?.setAttribute?("title", chapter)
+        setText("chapter-step", "\(stage.stageInChapter) / \(CravingStage.stagesPerChapter)")
+        for index in 0..<CravingStage.stagesPerChapter {
+            let slot = index + 1
+            var state = slot < stage.stageInChapter ? "cleared" : "ahead"
+            if slot == stage.stageInChapter { state = stage.isFinale ? "finale" : "current" }
+            byId("chapter-pips")?.children.item(index).object?.dataset.state = .string(state)
+        }
+
+        updateStageBudget(attempt.movesRemaining)
+        for index in 0..<2 {
+            let id = "goal-\(index)"
+            let row = byId(id)
+            row?.hidden = .boolean(index >= attempt.objectives.count)
+            guard index < attempt.objectives.count else { continue }
+            let objective = attempt.objectives[index]
+            let copy = goalCopy(objective.goal)
+            setText("\(id)-title", copy.title)
+            setText("\(id)-count", "\(objective.progress) / \(objective.goal.target)")
+            if let art = byId("\(id)-art") {
+                art.textContent = .string(copy.symbol)
+                art.style.backgroundImage = .string(copy.icon.map { "url('./assets/\($0).svg')" } ?? "none")
             }
-            setText("snack-run-skip", "Skip")
-        case .active(let run):
-            byId("snack-run-choices")?.hidden = .boolean(true)
-            byId("snack-run-progress")?.hidden = .boolean(false)
-            setText("snack-run-title", run.goal.kind.title)
-            let remaining = run.movesRemaining
-            setText("snack-run-moves", "\(remaining) \(remaining == 1 ? "swap" : "swaps") left")
-            setText("snack-run-reward", "Earn a \(run.goal.kind.rewardName)")
-            switch run.goal {
-            case .biltemaDash:
-                let count = run.remainingReceipts.count
-                setText("snack-run-task", "Clear \(count) marked \(count == 1 ? "receipt" : "receipts")")
-            case .pokeOrder(let ingredient):
-                let first = snackName(ingredient)
-                setText("snack-run-task", run.ingredientsMatched == 0 ? "Match \(first), then Poke" : "\(first) ✓ · Match Poke")
+            _ = row?.toggleAttribute?("data-complete", objective.remaining == 0)
+        }
+
+        let tip: String?
+        switch stage.spotlight {
+        case .cupcake: tip = "Cupcake Spotlight · 2× favorites"
+        case .teido: tip = "Teido Spotlight · 3× earns a rocket"
+        case .none:
+            tip = switch stage.goals.count == 1 ? stage.goals.first : nil {
+            case .puppies: "Match below the puppy to guide it home"
+            case .snores: "Match beside a bubble to pop it"
+            default: nil
             }
-            setText("snack-run-skip", "Leave")
         }
+        byId("stage-tip")?.hidden = .boolean(tip == nil)
+        if let tip { setText("stage-tip", tip) }
     }
 
-    func updateMission(_ attempt: MissionAttempt?, showStory: Bool) {
-        byId("screen-game")?.dataset.mode = .string(attempt == nil ? "endless" : "mission")
-        byId("run-focus")?.hidden = .boolean(!showStory)
-        byId("mission-panel")?.hidden = .boolean(attempt == nil)
-        guard let attempt else { return }
-        let remaining = attempt.movesRemaining
-        setText("mission-title", attempt.definition.title)
-        setText("mission-moves", "\(remaining) \(remaining == 1 ? "swap" : "swaps") left")
-        if attempt.definition == .puppyPickup, attempt.puppiesHome > 0 {
-            setText("mission-task", "\(attempt.puppiesHome)/2 puppies home")
-        } else {
-            setText("mission-task", attempt.definition.instruction)
-        }
+    func updateStageBudget(_ remaining: Int) {
+        setText("stage-swaps", "\(remaining) \(remaining == 1 ? "swap" : "swaps") left")
     }
 
-    func setSnackRunControlsEnabled(_ enabled: Bool) {
-        for id in ["snack-run-dash", "snack-run-poke", "snack-run-skip"] {
-            byId(id)?.disabled = .boolean(!enabled)
-        }
+    func showFinaleBonus(_ count: Int) {
+        setText("stage-swaps", "Bonus ×\(count)")
     }
 
-    private func snackName(_ kind: StandardTileKind) -> String {
-        switch kind {
-        case .hermanosTaco: "Taco"
-        case .biltemaCombo: "Biltema"
-        default: kind.displayName
+    private func goalCopy(_ goal: CravingGoal) -> (title: String, icon: String?, symbol: String) {
+        switch goal {
+        case .snacks(let kind, _):
+            let title: String
+            switch kind {
+            case .cupcake: title = "Cupcakes"
+            case .teido: title = "Teido tiles"
+            case .hermanosTaco: title = "Hermanos Tacos"
+            case .partillePoke: title = "Poke Bowls"
+            case .biltemaCombo: title = "Biltema Combos"
+            case .bigMac: title = "Big Macs"
+            }
+            return (title, "tile-\(kind.rawValue)", "")
+        case .favorites: return ("Cupcakes + Big Macs", "tile-bigMac", "")
+        case .puppies: return ("Puppies home", "tile-puppy", "")
+        case .snores: return ("Snores popped", nil, "Zzz")
+        case .specials(.rockets, _): return ("Rockets fired", "event-rocket", "")
+        case .specials(.bombs, _): return ("Fiesta Bombs fired", nil, "✦")
+        case .specials(.combinations, _): return ("Specials combined", nil, "↔✦")
         }
     }
 
@@ -241,30 +188,12 @@ final class DOMController {
         activeCombo: Int,
         cupcakeState: String,
         teidoState: String,
+        lifetimePuppies: UInt64,
         hasSleepingPuppy: Bool
     ) {
         setText("hud-score", "\(resolver.stats.score)")
         setText("hud-best", "BEST \(max(resolver.stats.score, highScore))")
-        if let attempt = resolver.mission {
-            setText("hud-tier", "MISSION \(attempt.definition.rawValue)")
-        } else {
-            setText("hud-tier", "TIER \(resolver.stats.tier)")
-        }
-
         let surge = resolver.currentConfig.surge
-        let tierLabel: String
-        switch surge {
-        case .none: tierLabel = "🌙 Night Owl Tier"
-        case .cupcake: tierLabel = "🧁 Cupcake Surge!"
-        case .teido: tierLabel = "🎮 Teido Surge!"
-        }
-        setText("hud-tier-label", tierLabel)
-
-        let tierPct = Int((resolver.tierProgressFraction * 100.0).rounded())
-        setText("hud-tier-pct", "\(tierPct)%")
-        if let bar = byId("hud-tier-bar") {
-            bar.style.width = .string("\(tierPct)%")
-        }
 
         let snoreCount = resolver.board.activeSnoreCount
         setText("hud-snore-count", "😴 Snore \(snoreCount)/\(DifficultyConfig.snoreLoseThreshold)")
@@ -275,7 +204,7 @@ final class DOMController {
         }
 
         setText("hud-combo", "\(activeCombo)x")
-        setText("hud-puppies", "\(resolver.stats.puppiesRescued)")
+        setText("hud-puppies", "\(lifetimePuppies)")
         setText("hud-shuffles", "\(resolver.stats.availableShuffles)/\(DifficultyConfig.maxEmergencyShuffles)")
 
         if let shuffleBtn = byId("btn-shuffle") {
@@ -297,7 +226,7 @@ final class DOMController {
     func renderScrapbook(storage: StorageManager) {
         setText("scrapbook-unlocked-count", "\(storage.tiersEarned)")
         setText("scrapbook-total-puppies", "\(storage.data.totalPuppiesRescued) 🐾")
-        setText("scrapbook-best-tier", "T\(storage.data.highestTierReached)")
+        setText("scrapbook-trail-stars", "\(storage.data.cravingStars ?? 0)")
 
         if let themeRow = byId("scrapbook-themes") {
             themeRow.innerHTML = .string("")
@@ -383,35 +312,33 @@ final class DOMController {
         }
     }
 
-    func showGameOver(reason: GameOverReason, stats: RunStats, highScore: Int) {
-        setText("gameover-icon", reason == .snoreOverload ? "😴💤" : "🌭🔄")
-        setText("gameover-title", reason.headline)
-        setText("gameover-score", "\(stats.score)")
-        setText("gameover-tier", "Tier \(stats.tier)")
-        setText("gameover-puppies", "\(stats.puppiesRescued) 🐾")
-        setText("gameover-snores", "\(stats.snoreBubblesPopped)")
-        setText("gameover-cascade", "\(stats.maxCascadeReached)x")
-        if let badge = byId("gameover-record-badge") {
-            badge.hidden = .boolean(!(stats.score > 0 && stats.score >= highScore))
-        }
-        openDialog("dialog-gameover")
-    }
-
-    func showMissionResult(_ attempt: MissionAttempt, result: MissionResult) {
-        let won = result == .cleared
-        let next = won && attempt.definition.next != nil
+    func showStageResult(_ attempt: CravingAttempt, result: CravingStageResult) {
+        let number = attempt.definition.number
+        let won: Bool
         switch result {
-        case .cleared:
-            setText("mission-result-title", next ? "Mission cleared!" : "All missions cleared!")
-            let used = attempt.definition.moveLimit - attempt.movesRemaining
-            setText("mission-result-detail", "\(attempt.definition.title) in \(used) \(used == 1 ? "swap" : "swaps").")
-        case .outOfSwaps, .noValidMoves:
-            setText("mission-result-title", result == .outOfSwaps ? "Out of swaps" : "Out of valid moves")
-            setText("mission-result-detail", attempt.definition.instruction)
+        case .cleared(let stars, let bonus):
+            won = true
+            setText("stage-result-title", "Craving \(number) cleared!")
+            setText("stage-result-stars", String(repeating: "★", count: stars) + String(repeating: "☆", count: 3 - stars))
+            _ = byId("stage-result-stars")?.setAttribute?("aria-label", "\(stars) of 3 stars")
+            setText("stage-result-detail", bonus > 0 ? "\(bonus) bonus \(bonus == 1 ? "power-up" : "power-ups")" : "Cleared on the final swap")
+        case .outOfSwaps:
+            won = false
+            setText("stage-result-title", "Out of swaps")
+            setText("stage-result-detail", "Craving \(number)")
+        case .blocked(let reason):
+            won = false
+            setText("stage-result-title", reason == .snoreOverload ? "Light Sleeper Alert" : "Out of valid moves")
+            setText("stage-result-detail", "Craving \(number)")
         }
-        byId("btn-mission-next")?.hidden = .boolean(!next)
-        setText("btn-mission-retry", won ? "Replay mission" : "Retry mission")
-        openDialog("dialog-mission-result")
+        let summary = attempt.objectives.map {
+            "\(goalCopy($0.goal).title) \($0.progress)/\($0.goal.target)"
+        }.joined(separator: " · ")
+        setText("stage-result-objectives", summary)
+        byId("stage-result-stars")?.hidden = .boolean(!won)
+        byId("btn-stage-next")?.hidden = .boolean(!won)
+        byId("btn-stage-retry")?.hidden = .boolean(won)
+        openDialog("dialog-stage-result")
     }
 
     func openDialog(_ id: String) {

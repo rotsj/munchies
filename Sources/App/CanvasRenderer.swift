@@ -77,8 +77,6 @@ final class CanvasRenderer {
     private var particles: [Particle] = []
     private var beams: [BeamEffect] = []
     private var callouts: [FloatingCallout] = []
-    private var snackRunReceipts: Set<GridPos> = []
-    private var deliveryCounter: GridPos?
     private var spriteCache: [String: JSObject] = [:]
     private var spriteLoaders: [JSClosure] = []
 
@@ -87,6 +85,7 @@ final class CanvasRenderer {
     private var finalBoardSnapshot: BoardState?
     private var stepTimer: Double = 0
     private var stepDuration: Double = 0
+    private var finalePlaying = false
     private var onStepEvent: ((BoardStep) -> Void)?
     private var onPlaybackComplete: (() -> Void)?
 
@@ -183,6 +182,7 @@ final class CanvasRenderer {
         onStepEvent = nil
         onPlaybackComplete = nil
         isAnimating = false
+        finalePlaying = false
         _ = canvas.setAttribute?("aria-busy", "false")
         particles.removeAll()
         beams.removeAll()
@@ -243,6 +243,7 @@ final class CanvasRenderer {
             }
             finalBoardSnapshot = nil
             isAnimating = false
+            finalePlaying = false
             _ = canvas.setAttribute?("aria-busy", "false")
             let done = onPlaybackComplete
             onPlaybackComplete = nil
@@ -297,7 +298,6 @@ final class CanvasRenderer {
             }
 
         case .matchCleared(let positions, let cascadeDepth, let points, _):
-            snackRunReceipts.subtract(positions)
             var sumX = 0.0
             var sumY = 0.0
             for pos in positions {
@@ -323,7 +323,7 @@ final class CanvasRenderer {
             }
             return 0.15
 
-        case .specialCreated(let at, let tile), .snackRunCompleted(_, let at, let tile):
+        case .specialCreated(let at, let tile):
             let pt = centerPoint(for: at)
             if let old = posToId[at] { tiles.removeValue(forKey: old) }
             tiles[tile.id] = VisualTile(tile: tile, pos: at, x: pt.0, y: pt.1, targetX: pt.0, targetY: pt.1, scaleX: 1.25, scaleY: 1.25)
@@ -332,7 +332,6 @@ final class CanvasRenderer {
             return 0.09
 
         case .specialTriggered(let kind, let origin, let affected, let points):
-            snackRunReceipts.subtract(affected)
             let origPt = centerPoint(for: origin)
             switch kind {
             case .korvRocketHorizontal, .rocketPlusRocket, .rocketPlusBomb:
@@ -365,7 +364,7 @@ final class CanvasRenderer {
             }
             triggerShake(intensity: 7.0, duration: 0.22)
             callouts.append(FloatingCallout(text: "+\(points)", x: origPt.0, y: origPt.1, color: "#ffe066", fontSize: 22, life: 0.72, maxLife: 0.72))
-            return 0.24
+            return finalePlaying ? 0.10 : 0.24
 
         case .cupcakePacifierWave(let from, let poppedSnoreAt):
             let s = centerPoint(for: from)
@@ -426,7 +425,7 @@ final class CanvasRenderer {
             }
             return 0.18
 
-        case .tilesSpawned(let spawns):
+        case .tilesSpawned(let spawns), .stageFinale(let spawns):
             for spawn in spawns {
                 if let old = posToId[spawn.at] { tiles.removeValue(forKey: old) }
                 let dst = centerPoint(for: spawn.at)
@@ -443,6 +442,10 @@ final class CanvasRenderer {
                 )
                 posToId[spawn.at] = spawn.tile.id
             }
+            if case .stageFinale = step {
+                finalePlaying = true
+                return 0.34
+            }
             return 0.20
 
         case .puppySpawned(let at, let tile):
@@ -454,7 +457,6 @@ final class CanvasRenderer {
             return 0.22
 
         case .puppyRescued(let at, let blastPositions, let points):
-            snackRunReceipts.subtract(blastPositions)
             let pt = centerPoint(for: at)
             for p in blastPositions {
                 if let id = posToId.removeValue(forKey: p) { tiles.removeValue(forKey: id) }
@@ -498,7 +500,7 @@ final class CanvasRenderer {
             }
             return 0.28
 
-        case .avatarReaction, .snackRunExpired, .gameOver:
+        case .avatarReaction, .gameOver:
             return 0.0
         }
     }
@@ -575,68 +577,11 @@ final class CanvasRenderer {
 
         drawBoardContainer()
         drawTiles()
-        drawSnackRunReceipts()
-        if let deliveryCounter { drawDeliveryCounter(at: deliveryCounter) }
         drawBeams()
         drawParticles()
         drawCallouts()
 
         _ = ctx.restore?()
-    }
-
-    func setObjectiveMarkers(receipts: Set<GridPos>, counter: GridPos?) {
-        snackRunReceipts = receipts
-        deliveryCounter = counter
-        if let counter {
-            _ = canvas.setAttribute?("aria-description", "Biltema counter. Row \(counter.row + 1), column \(counter.col + 1).")
-        } else if !receipts.isEmpty {
-            let cells = receipts.sorted().map { "Row \($0.row + 1), column \($0.col + 1)." }.joined(separator: " ")
-            _ = canvas.setAttribute?("aria-description", "Biltema receipts. \(cells)")
-        } else {
-            _ = canvas.removeAttribute?("aria-description")
-        }
-    }
-
-    private func drawDeliveryCounter(at position: GridPos) {
-        let (centerX, centerY) = centerPoint(for: position)
-        let x = centerX - cellSize * 0.45
-        let y = centerY - cellSize * 0.45
-        let size = cellSize * 0.38
-        drawRoundedRect(x: x, y: y, w: size, h: size, r: 3)
-        ctx.fillStyle = .string("#194b80")
-        _ = ctx.fill?()
-        ctx.strokeStyle = .string("#f9d384")
-        ctx.lineWidth = .number(1.4)
-        _ = ctx.stroke?()
-        _ = ctx.beginPath?()
-        _ = ctx.moveTo?(x + size * 0.30, y + size * 0.78)
-        _ = ctx.lineTo?(x + size * 0.30, y + size * 0.23)
-        _ = ctx.lineTo?(x + size * 0.76, y + size * 0.23)
-        _ = ctx.lineTo?(x + size * 0.65, y + size * 0.50)
-        _ = ctx.lineTo?(x + size * 0.30, y + size * 0.50)
-        _ = ctx.stroke?()
-    }
-
-    private func drawSnackRunReceipts() {
-        let width = cellSize * 0.26
-        let height = cellSize * 0.32
-        for position in snackRunReceipts {
-            let center = centerPoint(for: position)
-            let x = center.0 - cellSize * 0.45
-            let y = center.1 - cellSize * 0.45
-            drawRoundedRect(x: x, y: y, w: width, h: height, r: 2)
-            ctx.fillStyle = .string("#fff2bf")
-            _ = ctx.fill?()
-            ctx.strokeStyle = .string("#4d3b63")
-            ctx.lineWidth = .number(1)
-            _ = ctx.stroke?()
-            _ = ctx.beginPath?()
-            _ = ctx.moveTo?(x + width * 0.24, y + height * 0.37)
-            _ = ctx.lineTo?(x + width * 0.76, y + height * 0.37)
-            _ = ctx.moveTo?(x + width * 0.24, y + height * 0.63)
-            _ = ctx.lineTo?(x + width * 0.62, y + height * 0.63)
-            _ = ctx.stroke?()
-        }
     }
 
     private func advanceScale(_ scale: inout Double, velocity: inout Double, target: Double, dt: Double, decay: Double) {

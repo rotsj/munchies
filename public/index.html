@@ -55,8 +55,10 @@
 
     <footer class="home-actions">
       <p id="boot-error" role="status" hidden>Munchies couldn’t load. Reload to try again.</p>
-      <button type="button" id="btn-missions" class="btn-primary" disabled>Play Missions</button>
-      <button type="button" id="btn-play" class="btn-secondary" disabled>▶ Play Endless Run</button>
+      <button type="button" id="btn-play" class="btn-primary trail-play" aria-labelledby="home-play-title" disabled>
+        <span id="home-play-title">Play Craving Trail</span>
+        <span id="home-craving" class="pill-count">Craving 1</span>
+      </button>
       <button type="button" id="btn-scrapbook" class="btn-secondary" disabled>
         <span>📸 Couple's Scrapbook</span>
         <span id="home-scrapbook-count" class="pill-count">0 tiers</span>
@@ -82,11 +84,11 @@
         <!-- Score & Tier -->
         <div class="score-center">
           <div class="tier-row">
-            <span id="hud-tier" class="tier-pill">TIER 1</span>
+            <span id="hud-tier" class="tier-pill">CRAVING 1</span>
             <button type="button" id="btn-pause" class="pause-btn" aria-label="Pause">⏸</button>
           </div>
-          <div id="hud-score" class="score-value">0</div>
-          <div id="hud-best" class="best-value">BEST 0</div>
+          <div id="stage-swaps" class="stage-swaps">14 swaps left</div>
+          <div class="stage-score"><span id="hud-score" aria-label="Score">0</span><span id="hud-best">BEST 0</span></div>
         </div>
 
         <!-- Teido Avatar -->
@@ -112,47 +114,34 @@
           </div>
         </div>
 
-        <div class="meter-block">
+        <div class="meter-block chapter-track">
           <div class="meter-meta">
-            <span id="hud-tier-label">🌙 Night Owl Tier</span>
-            <span id="hud-tier-pct" class="meter-accent-gold">0%</span>
+            <span id="chapter-theme">Biltema Run</span>
+            <span id="chapter-step" class="meter-accent-gold">1 / 5</span>
           </div>
-          <div class="meter-track">
-            <div id="hud-tier-bar" class="meter-fill meter-tier" style="width: 0%"></div>
+          <div id="chapter-pips" class="chapter-pips" aria-hidden="true">
+            <span></span><span></span><span></span><span></span><span></span>
           </div>
         </div>
       </div>
     </header>
 
-    <section id="run-focus" class="run-focus" aria-label="Run story">
-      <div id="run-moment" role="status" aria-atomic="true"></div>
+    <section id="stage-goals" class="stage-goals" aria-label="Stage objectives">
+      <div class="stage-targets" role="status" aria-atomic="true">
+        <div id="goal-0" class="stage-goal">
+          <span class="goal-art" id="goal-0-art" aria-hidden="true"></span>
+          <strong id="goal-0-title"></strong><span id="goal-0-count" class="goal-count"></span>
+        </div>
+        <div id="goal-1" class="stage-goal" hidden>
+          <span class="goal-art" id="goal-1-art" aria-hidden="true"></span>
+          <strong id="goal-1-title"></strong><span id="goal-1-count" class="goal-count"></span>
+        </div>
+        <span id="stage-tip" class="stage-tip" hidden></span>
+      </div>
       <button type="button" id="btn-run-journal" class="journal-button" aria-haspopup="dialog">Journal</button>
     </section>
-    <section id="snack-run-panel" class="snack-run-panel" aria-label="Snack Runs" hidden>
-      <div id="snack-run-choices" class="snack-run-choices" hidden>
-        <button type="button" id="snack-run-dash" class="snack-run-choice" aria-labelledby="snack-run-dash-title" aria-describedby="snack-run-dash-detail" hidden>
-          <strong id="snack-run-dash-title">Biltema Dash</strong>
-          <span id="snack-run-dash-detail">3 receipts · Korv Rocket</span>
-        </button>
-        <button type="button" id="snack-run-poke" class="snack-run-choice" aria-labelledby="snack-run-poke-title" aria-describedby="snack-run-poke-detail" hidden>
-          <strong id="snack-run-poke-title">Partille Poke Order</strong>
-          <span id="snack-run-poke-detail"></span>
-        </button>
-      </div>
-      <div id="snack-run-progress" class="snack-run-progress" role="status" aria-atomic="true" hidden>
-        <strong id="snack-run-title"></strong>
-        <span id="snack-run-moves"></span>
-        <span id="snack-run-task"></span>
-        <span id="snack-run-reward"></span>
-      </div>
-      <button type="button" id="snack-run-skip" class="snack-run-skip">Skip</button>
-    </section>
-    <section id="mission-panel" class="mission-panel" aria-label="Mission objective" hidden>
-      <div class="mission-copy" role="status" aria-atomic="true">
-        <strong id="mission-title"></strong>
-        <span id="mission-moves"></span>
-        <span id="mission-task"></span>
-      </div>
+    <section id="run-focus" class="run-focus" aria-label="Run story">
+      <div id="run-moment" role="status" aria-atomic="true"></div>
     </section>
 
     <!-- 8x9 HiDPI Canvas -->
@@ -188,25 +177,17 @@
     </footer>
   </main>
 
-  <dialog id="dialog-missions" closedby="any" aria-labelledby="missions-title">
-    <div class="dialog-head">
-      <h1 id="missions-title">Missions</h1>
-      <form method="dialog">
-        <button type="submit" class="dialog-close" aria-label="Close missions" autofocus>Done</button>
-      </form>
+  <dialog id="dialog-stage-result" closedby="none" aria-labelledby="stage-result-title">
+    <div class="stage-result-copy">
+      <h1 id="stage-result-title"></h1>
+      <p id="stage-result-stars" class="stage-stars"></p>
+      <p id="stage-result-detail"></p>
+      <p id="stage-result-objectives"></p>
     </div>
-    <ol id="mission-list" class="mission-list" role="list"></ol>
-  </dialog>
-
-  <dialog id="dialog-mission-result" closedby="none" aria-labelledby="mission-result-title">
-    <div class="gameover-content">
-      <h1 id="mission-result-title"></h1>
-      <p id="mission-result-detail"></p>
-    </div>
-    <div class="settings-actions mission-result-actions">
-      <button type="button" id="btn-mission-next" class="btn-primary" hidden>Next mission</button>
-      <button type="button" id="btn-mission-retry" class="btn-secondary">Retry mission</button>
-      <button type="button" id="btn-mission-home" class="btn-secondary">Missions</button>
+    <div class="settings-actions stage-result-actions">
+      <button type="button" id="btn-stage-next" class="btn-primary" hidden>Next stage</button>
+      <button type="button" id="btn-stage-retry" class="btn-primary">Retry</button>
+      <button type="button" id="btn-stage-home" class="btn-secondary">Home</button>
     </div>
   </dialog>
 
@@ -250,7 +231,7 @@
     </div>
 
     <div id="settings-ingame-actions" class="settings-actions" hidden>
-      <button type="button" id="btn-settings-restart" class="btn-secondary">↺ Restart Run</button>
+      <button type="button" id="btn-settings-restart" class="btn-secondary">↺ Retry Stage</button>
       <button type="button" id="btn-settings-home" class="btn-danger">🏠 Back to Home</button>
     </div>
 
@@ -272,7 +253,7 @@
     <div class="scrapbook-summary">
       <div class="summary-pill"><strong id="scrapbook-unlocked-count">0</strong><span>Tiers earned</span></div>
       <div class="summary-pill"><strong id="scrapbook-total-puppies">0 🐾</strong><span>Puppies</span></div>
-      <div class="summary-pill"><strong id="scrapbook-best-tier">T1</strong><span>Best run tier</span></div>
+      <div class="summary-pill"><strong id="scrapbook-trail-stars">0</strong><span>Trail stars</span></div>
     </div>
 
     <div class="theme-section">
@@ -284,26 +265,6 @@
   </dialog>
 
   <!-- GAME OVER MODAL (closedby="none" so player chooses Replay or Home explicitly) -->
-  <dialog id="dialog-gameover" closedby="none" aria-labelledby="gameover-title">
-    <div class="gameover-body">
-      <div id="gameover-icon" class="gameover-icon" aria-hidden="true">😴💤</div>
-      <h1 id="gameover-title">Teido Woke the Whole Neighborhood!</h1>
-      <div id="gameover-record-badge" class="record-badge" hidden>NEW HIGH SCORE!</div>
-
-      <div class="gameover-stats">
-        <div class="go-row"><span>⭐ Final Score</span><strong id="gameover-score">0</strong></div>
-        <div class="go-row"><span>🌙 Night Owl Tier</span><strong id="gameover-tier">Tier 1</strong></div>
-        <div class="go-row"><span>💖 Puppies Rescued</span><strong id="gameover-puppies">0 🐾</strong></div>
-        <div class="go-row"><span>💤 Snores Popped</span><strong id="gameover-snores">0</strong></div>
-        <div class="go-row"><span>🔥 Max Cascade</span><strong id="gameover-cascade">0x</strong></div>
-      </div>
-
-      <div class="gameover-actions">
-        <button type="button" id="btn-gameover-home" class="btn-secondary">Home</button>
-        <button type="button" id="btn-gameover-replay" class="btn-primary" autofocus>▶ Play Again</button>
-      </div>
-    </div>
-  </dialog>
 
   <script type="importmap">
     { "imports": { "@bjorn3/browser_wasi_shim": "./runtime/wasi/index.js" } }

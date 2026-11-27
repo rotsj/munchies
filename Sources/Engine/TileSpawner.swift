@@ -68,7 +68,8 @@ public enum TileSpawner {
         board: inout BoardState,
         tier: Int,
         cascadeDepth: Int,
-        surge: CravingSurge
+        surge: CravingSurge,
+        targetBias: (kind: StandardTileKind, extraWeight: Int)? = nil
     ) -> [TileSpawn] {
         let profile = SpawnDifficultyProfile.forTier(tier)
         let antiMatchMode = cascadeDepth >= profile.maxAutoCascadeDepth
@@ -106,7 +107,8 @@ public enum TileSpawner {
                     in: &board,
                     profile: profile,
                     activeSnoreCount: activeSnores,
-                    antiMatchMode: antiMatchMode
+                    antiMatchMode: antiMatchMode,
+                    targetBias: targetBias
                 )
                 let tile = board.makeTile(kind: .standard(chosenKind))
                 board[pos] = tile
@@ -198,7 +200,8 @@ public enum TileSpawner {
         in board: inout BoardState,
         profile: SpawnDifficultyProfile,
         activeSnoreCount: Int,
-        antiMatchMode: Bool
+        antiMatchMode: Bool,
+        targetBias: (kind: StandardTileKind, extraWeight: Int)? = nil
     ) -> StandardTileKind {
         let allKinds = StandardTileKind.allCases
         var candidates: [(StandardTileKind, Int)] = []
@@ -212,6 +215,9 @@ public enum TileSpawner {
 
             if kind == .cupcake && activeSnoreCount >= profile.cupcakeMercyThreshold {
                 weight = profile.tier <= 3 ? 125 : 105
+            }
+            if let targetBias, kind == targetBias.kind {
+                weight += targetBias.extraWeight
             }
 
             if createsTwoInARowSetup(kind: kind, at: pos, in: board) {

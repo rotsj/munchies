@@ -7,9 +7,7 @@ public struct CascadeResolver: Sendable {
     public var nextPuppyScoreThreshold: Int
     public var isGameOver: Bool
     public var gameOverReason: GameOverReason?
-    public private(set) var snackRun: SnackRunState = .idle
-    public private(set) var mission: MissionAttempt?
-    private var pendingSnackRunReward: SnackRunKind?
+    public private(set) var stage: CravingAttempt?
 
     public init(seed: UInt64 = 42, startingTier: Int = 1) {
         var initialBoard = BoardState(seed: seed)
@@ -17,10 +15,10 @@ public struct CascadeResolver: Sendable {
         self.init(board: initialBoard, startingTier: startingTier)
     }
 
-    public init(mission: MiniMission) {
-        self.init(board: mission.makeBoard(), startingTier: 1)
-        self.mission = MissionAttempt(mission)
-        stats.availableShuffles = 0
+    public init(stage: CravingStage, seed: UInt64 = 42) {
+        self.init(board: CravingBoardSetup.makeBoard(stage: stage, seed: seed), startingTier: stage.difficultyTier)
+        self.stage = CravingAttempt(stage)
+        nextPuppyScoreThreshold = currentConfig.basePuppyPointInterval
     }
 
     private init(board: BoardState, startingTier: Int) {
@@ -28,15 +26,14 @@ public struct CascadeResolver: Sendable {
         var initialStats = RunStats()
         initialStats.tier = max(1, startingTier)
         self.stats = initialStats
-        self.movesSinceLastSnore = 0
-        let cfg = DifficultyConfig.forTier(startingTier)
-        self.nextPuppyScoreThreshold = cfg.basePuppyPointInterval
-        self.isGameOver = false
-        self.gameOverReason = nil
+        movesSinceLastSnore = 0
+        nextPuppyScoreThreshold = DifficultyConfig.forTier(startingTier).basePuppyPointInterval
+        isGameOver = false
+        gameOverReason = nil
     }
 
     public var currentConfig: DifficultyConfig {
-        DifficultyConfig.forTier(stats.tier)
+        DifficultyConfig.forTier(stats.tier, spotlight: stage?.definition.spotlight)
     }
 
     public var snoreMeterProgress: Double {
@@ -49,242 +46,252 @@ public struct CascadeResolver: Sendable {
         return min(1.0, Double(stats.tierProgress) / Double(target))
     }
 
+    public func suggestedMove() -> ValidMove? {
+        guard !isGameOver else { return nil }
+        return stage?.hint(in: board) ?? MoveValidator.findBestHint(in: board)
+    }
+
     public mutating func performSwap(from a: GridPos, to b: GridPos) -> [BoardStep] {
         let previousMoves = stats.movesMade
         var steps = resolveSwap(from: a, to: b)
-        guard stats.movesMade > previousMoves else { return steps }
-        if var attempt = mission {
-            attempt.finishTurn(steps, deadlocked: isGameOver)
-            mission = attempt
-            isGameOver = attempt.result != nil
-            return steps
-        }
-        guard !isGameOver else { return steps }
+        guard stats.movesMade > previousMoves, var attempt = stage else { return steps }
 
-        if case .active(var run) = snackRun {
-            run.apply(SnackRunTurn(steps: steps))
-            if run.isComplete {
-                pendingSnackRunReward = run.goal.kind
-                snackRun = .idle
-            } else if run.movesRemaining == 0 {
-                steps.append(.snackRunExpired(kind: run.goal.kind))
-                snackRun = .idle
-            } else {
-                snackRun = .active(run)
-            }
-        } else {
-            snackRun = .idle
-            if pendingSnackRunReward == nil, SnackRunPlanner.isOfferTurn(stats.movesMade) {
-                let goals = SnackRunPlanner.goals(for: self)
-                if !goals.isEmpty { snackRun = .offered(goals) }
+        attempt.finishSwap(steps, blocked: gameOverReason)
+        stage = attempt
+        if let result = attempt.result {
+            isGameOver = true
+            if case .cleared(_, let bonusMoves) = result {
+                gameOverReason = nil
+                steps.removeAll { step in
+                    if case .gameOver = step { return true }
+                    return false
+                }
+                playStageFinale(bonusMoves, steps: &steps)
             }
         }
-        awardSnackRunReward(steps: &steps)
         return steps
     }
 
-    public mutating func acceptSnackRun(_ kind: SnackRunKind) -> Bool {
-        guard !isGameOver, case .offered(let goals) = snackRun,
-              let goal = goals.first(where: { $0.kind == kind }) else { return false }
-        snackRun = .active(ActiveSnackRun(goal: goal))
-        return true
+    private struct CascadeTurn {
+        var depth = 0
+        var lastSpawns: [TileSpawn] = []
+        var cleared = 0
+        var rescuedPuppy = false
+        var matchedBigMac = false
+        var matchedCupcakes = 0
+        var puppyIntervalCrossed = false
     }
 
-    public mutating func skipSnackRun() {
-        snackRun = .idle
-    }
-
-    // Offer planning replays the same turns without generating new offers or rewards.
-    mutating func resolveSwap(from a: GridPos, to b: GridPos) -> [BoardStep] {
+    private mutating func resolveSwap(from a: GridPos, to b: GridPos) -> [BoardStep] {
         guard !isGameOver else { return [] }
         guard MoveValidator.isValidSwap(from: a, to: b, in: board) else {
             return [.swap(from: a, to: b, reverted: true)]
         }
 
-        var steps: [BoardStep] = []
-        let swipeAxis: SwipeAxis = (a.row == b.row) ? .horizontal : .vertical
-
+        var steps: [BoardStep] = [.swap(from: a, to: b, reverted: false)]
         board.swapTiles(at: a, and: b)
-        steps.append(.swap(from: a, to: b, reverted: false))
         stats.movesMade += 1
+        stage?.spendSwap()
 
-        var totalTilesClearedThisTurn = 0
-        var rescuedPuppyThisTurn = false
-        var matchedBigMacThisTurn = false
-        var matchedCupcakesThisTurn = 0
-        var teidoAchievementTriggered = false
-
+        var turn = CascadeTurn()
         let swappedA = board[a]
         let swappedB = board[b]
-        let handledDirectActivation = resolveDirectSwapActivation(
-            posA: a,
-            tileA: swappedA,
-            posB: b,
-            tileB: swappedB,
-            steps: &steps,
-            tilesCleared: &totalTilesClearedThisTurn,
-            matchedBigMac: &matchedBigMacThisTurn
-        )
-
-        var cascadeDepth = handledDirectActivation ? 1 : 0
-        var lastSpawns = handledDirectActivation ? applyGravityAndRefill(cascadeDepth: 1, steps: &steps) : []
-        var hazardUpdated = false
-        var progressApplied = 0
-        var puppyIntervalCrossed = false
-        let maxDepth = SpawnDifficultyProfile.forTier(stats.tier).maxAutoCascadeDepth
-
-        while true {
-            if checkAndRescuePuppies(
-                steps: &steps, rescuedFlag: &rescuedPuppyThisTurn, tilesCleared: &totalTilesClearedThisTurn
-            ) {
-                lastSpawns = applyGravityAndRefill(cascadeDepth: cascadeDepth, steps: &steps)
-                continue
-            }
-
-            var groups = board.findMatches()
-            if groups.isEmpty {
-                if !hazardUpdated {
-                    updateDriftingSnores(steps: &steps)
-                    hazardUpdated = true
-                }
-                if board.activeSnoreCount >= DifficultyConfig.snoreLoseThreshold {
-                    stats.maxCascadeReached = max(stats.maxCascadeReached, cascadeDepth)
-                    steps.append(.avatarReaction(.cupcakeSnoreAlert))
-                    endRun(.snoreOverload, steps: &steps)
-                    return steps
-                }
-                if mission == nil && totalTilesClearedThisTurn > progressApplied {
-                    puppyIntervalCrossed = puppyIntervalCrossed || reachedPuppyScoreThreshold
-                    advanceTierProgress(tilesCleared: totalTilesClearedThisTurn - progressApplied, steps: &steps)
-                    progressApplied = totalTilesClearedThisTurn
-                }
-                groups = board.findMatches()
-                if groups.isEmpty { break }
-            }
-            if cascadeDepth == maxDepth {
-                // A bubble can expose a match by leaving a cell after the final refill.
-                // Neutralize those runs at the cap while preserving the affected tiles.
-                let changes = TileSpawner.settleMatchesAtCascadeLimit(board: &board, groups: groups)
-                steps.append(.tilesSpawned(spawns: changes))
-                continue
-            }
-
-            cascadeDepth += 1
-
-            resolveMatchWave(
-                groups: groups,
-                cascadeDepth: cascadeDepth,
-                swipeAxis: cascadeDepth == 1 ? swipeAxis : nil,
-                preferredSwapPositions: cascadeDepth == 1 ? [b, a] : [],
-                steps: &steps,
-                tilesCleared: &totalTilesClearedThisTurn,
-                matchedBigMac: &matchedBigMacThisTurn,
-                matchedCupcakes: &matchedCupcakesThisTurn
-            )
-
-            if currentConfig.surge == .teido && cascadeDepth >= 3 && !teidoAchievementTriggered {
-                teidoAchievementTriggered = true
-                spawnTeidoAchievementRocket(steps: &steps)
-            }
-
-            lastSpawns = applyGravityAndRefill(cascadeDepth: cascadeDepth, steps: &steps)
+        if resolveDirectSwapActivation(
+            posA: a, tileA: swappedA, posB: b, tileB: swappedB,
+            steps: &steps, tilesCleared: &turn.cleared, matchedBigMac: &turn.matchedBigMac
+        ) {
+            turn.depth = 1
+            turn.lastSpawns = applyGravityAndRefill(cascadeDepth: turn.depth, steps: &steps)
         }
-        stats.maxCascadeReached = max(stats.maxCascadeReached, cascadeDepth)
-        if mission == nil { advanceSnoreMeter(cascadeDepth: cascadeDepth, steps: &steps) }
+
+        guard settleCascades(&turn, swap: ValidMove(from: a, to: b), steps: &steps) else { return steps }
+        stats.maxCascadeReached = max(stats.maxCascadeReached, turn.depth)
+        advanceSnoreMeter(cascadeDepth: turn.depth, steps: &steps)
         if board.activeSnoreCount >= DifficultyConfig.snoreLoseThreshold {
             steps.append(.avatarReaction(.cupcakeSnoreAlert))
             endRun(.snoreOverload, steps: &steps)
             return steps
         }
-
-        if rescuedPuppyThisTurn {
+        if turn.rescuedPuppy {
             steps.append(.avatarReaction(.cupcakeCheerPuppy))
-        } else if matchedBigMacThisTurn {
+        } else if turn.matchedBigMac {
             steps.append(.avatarReaction(.cupcakeCheerBigMac))
         }
-        if cascadeDepth >= 4 {
-            steps.append(.avatarReaction(.teidoComboWakeUp(cascadeDepth: cascadeDepth)))
+        if turn.depth >= 4 {
+            steps.append(.avatarReaction(.teidoComboWakeUp(cascadeDepth: turn.depth)))
         }
-
-        if mission == nil {
-            checkAndSpawnPuppy(maxCascadeDepth: cascadeDepth, intervalCrossed: puppyIntervalCrossed, steps: &steps)
-        }
-
+        checkAndSpawnPuppy(maxCascadeDepth: turn.depth, intervalCrossed: turn.puppyIntervalCrossed, steps: &steps)
         if board.activeSnoreCount >= 5 {
             steps.append(.avatarReaction(.cupcakeSnoreAlert))
         }
         if movesSinceLastSnore >= currentConfig.snoreSpawnCadence - 1 {
             steps.append(.avatarReaction(.teidoNoddingOff))
         }
-
-        if MoveValidator.findAllValidMoves(in: board).isEmpty {
-            if let rescuedSpawns = TileSpawner.silentDeadlockRescue(board: &board, recentSpawns: lastSpawns) {
-                steps.append(.tilesSpawned(spawns: rescuedSpawns))
-            } else {
-                while stats.availableShuffles > 0 && MoveValidator.findAllValidMoves(in: board).isEmpty {
-                    steps.append(contentsOf: triggerEmergencyShuffle())
-                }
-                if !isGameOver && MoveValidator.findAllValidMoves(in: board).isEmpty {
-                    endRun(.noValidMoves, steps: &steps)
-                }
-            }
-        }
-
+        keepBoardPlayable(recentSpawns: turn.lastSpawns, steps: &steps)
         return steps
+    }
+
+    private mutating func settleCascades(_ turn: inout CascadeTurn, swap: ValidMove?, steps: inout [BoardStep]) -> Bool {
+        var hazardUpdated = false
+        var progressApplied = 0
+        var teidoAchievementTriggered = false
+        let maxDepth = SpawnDifficultyProfile.forTier(stats.tier).maxAutoCascadeDepth
+
+        while true {
+            if checkAndRescuePuppies(steps: &steps, rescuedFlag: &turn.rescuedPuppy, tilesCleared: &turn.cleared) {
+                turn.lastSpawns = applyGravityAndRefill(cascadeDepth: turn.depth, steps: &steps)
+                continue
+            }
+            var groups = board.findMatches()
+            if groups.isEmpty {
+                guard swap != nil else { break }
+                if !hazardUpdated {
+                    updateDriftingSnores(steps: &steps)
+                    hazardUpdated = true
+                }
+                if board.activeSnoreCount >= DifficultyConfig.snoreLoseThreshold {
+                    stats.maxCascadeReached = max(stats.maxCascadeReached, turn.depth)
+                    steps.append(.avatarReaction(.cupcakeSnoreAlert))
+                    endRun(.snoreOverload, steps: &steps)
+                    return false
+                }
+                if stage == nil && turn.cleared > progressApplied {
+                    turn.puppyIntervalCrossed = turn.puppyIntervalCrossed || reachedPuppyScoreThreshold
+                    advanceTierProgress(tilesCleared: turn.cleared - progressApplied, steps: &steps)
+                    progressApplied = turn.cleared
+                }
+                groups = board.findMatches()
+                if groups.isEmpty { break }
+            }
+            if turn.depth == maxDepth {
+                // A drifting bubble can expose a match at the cascade cap.
+                let changes = TileSpawner.settleMatchesAtCascadeLimit(board: &board, groups: groups)
+                steps.append(.tilesSpawned(spawns: changes))
+                continue
+            }
+            turn.depth += 1
+            let firstSwap = turn.depth == 1 ? swap : nil
+            resolveMatchWave(
+                groups: groups,
+                cascadeDepth: turn.depth,
+                swipeAxis: firstSwap.map { $0.from.row == $0.to.row ? .horizontal : .vertical },
+                preferredSwapPositions: firstSwap.map { [$0.to, $0.from] } ?? [],
+                steps: &steps, tilesCleared: &turn.cleared,
+                matchedBigMac: &turn.matchedBigMac, matchedCupcakes: &turn.matchedCupcakes
+            )
+            if swap != nil && currentConfig.surge == .teido && turn.depth >= 3 && !teidoAchievementTriggered {
+                teidoAchievementTriggered = true
+                spawnTeidoAchievementRocket(steps: &steps)
+            }
+            turn.lastSpawns = applyGravityAndRefill(cascadeDepth: turn.depth, steps: &steps)
+        }
+        return true
     }
 
     public mutating func triggerEmergencyShuffle() -> [BoardStep] {
-        guard mission == nil, !isGameOver, stats.availableShuffles > 0 else { return [] }
+        guard !isGameOver, stats.availableShuffles > 0 else { return [] }
         let moves = MoveValidator.shuffleBoard(&board)
         if moves.isEmpty && !MoveValidator.findAllValidMoves(in: board).isEmpty { return [] }
-        if case .offered = snackRun { snackRun = .idle }
         stats.availableShuffles -= 1
         var steps: [BoardStep] = [.boardShuffled(moves: moves, usedEmergencyShuffle: true)]
-        if moves.isEmpty && stats.availableShuffles == 0 { endRun(.noValidMoves, steps: &steps) }
+        if moves.isEmpty {
+            if stage != nil {
+                recoverStageDeadlock(steps: &steps)
+                if MoveValidator.findAllValidMoves(in: board).isEmpty {
+                    endRun(.noValidMoves, steps: &steps)
+                    stage?.block(.noValidMoves)
+                }
+            } else if stats.availableShuffles == 0 {
+                endRun(.noValidMoves, steps: &steps)
+            }
+        }
         return steps
     }
 
-    private mutating func awardSnackRunReward(steps: inout [BoardStep]) {
-        guard let kind = pendingSnackRunReward,
-              let position = snackRunRewardPosition(), var tile = board[position] else { return }
-        tile.special = kind.reward
-        board[position] = tile
-        if tile.special == .fiestaBomb { stats.fiestaBombsCreated += 1 }
-        pendingSnackRunReward = nil
-        steps.append(.snackRunCompleted(kind: kind, at: position, tile: tile))
-    }
-
-    private func snackRunRewardPosition() -> GridPos? {
-        func eligible(_ position: GridPos) -> Bool {
-            guard let tile = board[position] else { return false }
-            return tile.kind.standardKind != nil && !tile.isLockedBySnore && !tile.special.isSpecial
+    private mutating func keepBoardPlayable(recentSpawns: [TileSpawn], steps: inout [BoardStep]) {
+        guard MoveValidator.findAllValidMoves(in: board).isEmpty else { return }
+        if let rescue = TileSpawner.silentDeadlockRescue(board: &board, recentSpawns: recentSpawns) {
+            steps.append(.tilesSpawned(spawns: rescue))
+            return
         }
-
-        // Prefer an ordinary snack that already participates in a possible match.
-        for move in MoveValidator.findAllValidMoves(in: board) {
-            var swapped = board
-            swapped.swapTiles(at: move.from, and: move.to)
-            for group in swapped.findMatches() {
-                for position in group.positions.sorted() {
-                    let original = position == move.from ? move.to : (position == move.to ? move.from : position)
-                    if eligible(original) { return original }
-                }
+        if stage != nil {
+            recoverStageDeadlock(steps: &steps)
+        } else {
+            while stats.availableShuffles > 0 && MoveValidator.findAllValidMoves(in: board).isEmpty {
+                steps.append(contentsOf: triggerEmergencyShuffle())
             }
         }
+        if !isGameOver && MoveValidator.findAllValidMoves(in: board).isEmpty {
+            endRun(.noValidMoves, steps: &steps)
+        }
+    }
+
+    private mutating func recoverStageDeadlock(steps: inout [BoardStep]) {
+        let moves = MoveValidator.shuffleBoard(&board)
+        if !moves.isEmpty {
+            steps.append(.boardShuffled(moves: moves, usedEmergencyShuffle: false))
+            return
+        }
+        // Use all plain unlocked snacks as a last resort. Keep objectives, power-ups,
+        // and hazards on the board and leave the player's budget alone.
+        let editable = board.grid.enumerated().flatMap { row, tiles in
+            tiles.enumerated().compactMap { col, entry -> TileSpawn? in
+                guard let tile = entry, tile.special == .none, tile.kind.standardKind != nil, !tile.isLockedBySnore else { return nil }
+                return TileSpawn(tile: tile, at: GridPos(row: row, col: col), spawnRowOffset: 0)
+            }
+        }
+        if let rescue = TileSpawner.silentDeadlockRescue(board: &board, recentSpawns: editable) {
+            steps.append(.tilesSpawned(spawns: rescue))
+        }
+    }
+
+    private mutating func playStageFinale(_ bonusMoves: Int, steps: inout [BoardStep]) {
+        guard bonusMoves > 0 else { return }
+        var plain: [GridPos] = []
+        var alreadySpecial: [GridPos] = []
         for row in 0..<BoardState.rows {
             for col in 0..<BoardState.cols {
                 let position = GridPos(row: row, col: col)
-                if eligible(position) { return position }
+                guard let tile = board[position], !tile.isLockedBySnore, tile.kind.standardKind != nil else { continue }
+                if tile.special.isSpecial { alreadySpecial.append(position) }
+                else { plain.append(position) }
             }
         }
-        return nil
+        var placements: [TileSpawn] = []
+        for index in 0..<bonusMoves {
+            if plain.isEmpty {
+                plain = alreadySpecial
+                alreadySpecial.removeAll()
+            }
+            guard !plain.isEmpty else { break }
+            let position = plain.remove(at: board.rng.nextInt(upperBound: plain.count))
+            guard var tile = board[position] else { continue }
+            switch index % 3 {
+            case 0: tile.special = .korvRocket(.horizontal)
+            case 1: tile.special = .korvRocket(.vertical)
+            default: tile.special = .fiestaBomb
+            }
+            board[position] = tile
+            placements.append(TileSpawn(tile: tile, at: position, spawnRowOffset: 1))
+        }
+        steps.append(.stageFinale(placements: placements))
+
+        var turn = CascadeTurn(depth: 1)
+        var detonated: Set<GridPos> = []
+        for (index, placement) in placements.enumerated() where detonated.insert(placement.at).inserted {
+            detonateSingleSpecial(
+                at: placement.at, modifier: placement.tile.special, cascadeDepth: min(6, index + 1),
+                detonated: &detonated, steps: &steps, tilesCleared: &turn.cleared, matchedBigMac: &turn.matchedBigMac
+            )
+        }
+        _ = applyGravityAndRefill(cascadeDepth: turn.depth, steps: &steps)
+        _ = settleCascades(&turn, swap: nil, steps: &steps)
+        stats.maxCascadeReached = max(stats.maxCascadeReached, turn.depth)
     }
 
     private mutating func endRun(_ reason: GameOverReason, steps: inout [BoardStep]) {
         isGameOver = true
         gameOverReason = reason
-        snackRun = .idle
-        pendingSnackRunReward = nil
         steps.append(.gameOver(reason: reason))
     }
 
@@ -526,6 +533,7 @@ public struct CascadeResolver: Sendable {
 
         let specialSpawnPositions = Set(createdSpecials.map(\.0))
         for pos in allMatchedPositions {
+            stage?.collect(board[pos]?.kind.standardKind)
             board[pos] = nil
             if !specialSpawnPositions.contains(pos) { tilesCleared += 1 }
         }
@@ -692,6 +700,7 @@ public struct CascadeResolver: Sendable {
                 stats.bigMacsMatched += 1
             }
 
+            stage?.collect(tile.kind.standardKind)
             board[pos] = nil
             tilesCleared += 1
             clearedPositions.append(pos)
@@ -736,7 +745,8 @@ public struct CascadeResolver: Sendable {
             board: &board,
             tier: stats.tier,
             cascadeDepth: cascadeDepth,
-            surge: currentConfig.surge
+            surge: currentConfig.surge,
+            targetBias: stage?.refillBias
         )
         if !spawns.isEmpty {
             steps.append(.tilesSpawned(spawns: spawns))
@@ -775,6 +785,7 @@ public struct CascadeResolver: Sendable {
                     stats.snoreBubblesPopped += 1
                     steps.append(.snorePopped(at: bp, pointsAwarded: awardPoints(200)))
                 }
+                stage?.collect(tile.kind.standardKind)
                 board[bp] = nil
                 tilesCleared += 1
                 clearedBlast.append(bp)
